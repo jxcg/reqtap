@@ -48,6 +48,7 @@ class ReqTap:
         self.store: RingBufferStore | None = None
 
         if app is not None:
+            # Check if flask app is available; initialise app
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
@@ -57,10 +58,9 @@ class ReqTap:
         inactive we log a quiet hint and return, so a committed ``ReqTap(app)``
         line is completely inert.
         """
+
+        # Check if constructor has enabled /_reqtap to record
         if not is_active(self.live_reqtap_requests):
-            logger.info(
-                "reqtap: inactive — pass live_reqtap_requests=True to ReqTap() to record requests"
-            )
             return
 
         self.store = RingBufferStore(capacity=self.buffer_size)

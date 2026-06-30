@@ -1,8 +1,17 @@
 # Python bytecode and cache
-__pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+
+# Project cache
+__pycache__/
+reqtap/__pycache__/
+reqtap/core/__pycache__/
+reqtap/flask/__pycache__/
+reqtap/tests/__pycache__/
+
+
+
 
 # Virtual environments
 venv/
