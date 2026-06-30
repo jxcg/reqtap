@@ -6,14 +6,35 @@ it shouldn't. The integration assertion (the `/_reqtap` route 404s when reqtap
 is off) is added once the Flask extension exists; here we pin the gate logic.
 """
 
-import pytest
 import logging
+
+import pytest
+
 from reqtap.core.safety import is_active
+
+logger = logging.getLogger(__name__)
 
 
 def test_off_by_default():
     assert is_active() is False
 
 
-def test_constructor_flag_activates():
-    assert is_active(live_reqtap_requests=True) is True
+@pytest.mark.parametrize(
+    ("live_reqtap_requests", "expected"),
+    [
+        (True, True),
+        (False, False),
+    ],
+)
+def test_flag_drives_activation(live_reqtap_requests, expected, caplog):
+    """The flag is the single source of truth: its value is the gate's answer.
+
+    Parametrized over both inputs so one test body covers on and off. The
+    logging line + `caplog` assertion double as the pattern for later tests
+    that need to verify what reqtap logs.
+    """
+    with caplog.at_level(logging.INFO):
+        logger.info("LIVE_REQTAP_REQUESTS=%s", live_reqtap_requests)
+
+    assert is_active(live_reqtap_requests) is expected
+    assert f"LIVE_REQTAP_REQUESTS={live_reqtap_requests}" in caplog.text
