@@ -11,13 +11,13 @@ from flask import Flask, jsonify, request
 from reqtap import ReqTap
 
 
-def build_app(**reqtap_kwargs):
+def build_app(**reqtap_kwargs) -> tuple[Flask, ReqTap]:
     """A 3-endpoint app with reqtap activated; returns (app, tap)."""
     app = Flask(__name__)
 
-    @app.get("/hello")
-    def hello():
-        return jsonify(message=f"Hello, {request.args.get('name', 'World')}!")
+    @app.get("/bridge")
+    def place():
+        return jsonify(message=f"Bridge Colour: {request.args.get('bridge_colour', None)}!")
 
     @app.post("/echo")
     def echo():
@@ -33,15 +33,17 @@ def build_app(**reqtap_kwargs):
 
 def test_get_request_is_captured():
     app, tap = build_app()
-    app.test_client().get("/hello?name=Josh")
+    app.test_client().get("/bridge?bridge_colour=red")
 
     record = tap.store.list()[0]
+    print(record)
     assert record.method == "GET"
-    assert record.path == "/hello"
-    assert record.query_string == "name=Josh"
+    assert record.path == "/bridge"
+    assert record.query_string == "bridge_colour=red"
     assert record.status == 200
     assert record.duration_ms is not None and record.duration_ms >= 0
-    assert "Hello, Josh!" in record.response_body
+    assert "Bridge Colour: red" in record.response_body
+
 
 
 def test_post_body_is_captured_both_ways():
