@@ -48,19 +48,20 @@ class ReqTap:
         self.store: RingBufferStore | None = None
 
         if app is not None:
+            # Check if flask app is available; initialise app
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
         """Wire capture into ``app`` — but only if activated.
 
         The safety gate is checked first, before anything is registered. When
-        inactive we log a quiet hint and return, so a committed ``ReqTap(app)``
-        line is completely inert.
+        inactive it registers nothing and returns, so a committed ``ReqTap(app)``
+        line is completely inert and silent. When active it logs a WARNING so
+        the user can't miss that sensitive request data is being recorded.
         """
+
+        # Check if constructor has enabled /_reqtap to record
         if not is_active(self.live_reqtap_requests):
-            logger.info(
-                "reqtap: inactive — pass live_reqtap_requests=True to ReqTap() to record requests"
-            )
             return
 
         self.store = RingBufferStore(capacity=self.buffer_size)
@@ -70,4 +71,7 @@ class ReqTap:
             max_body_bytes=self.max_body_bytes,
             redact_headers=self._redact_headers,
         )
-        logger.info("reqtap: LIVE — recording requests")
+        logger.warning(
+            "reqtap is LIVE: recording request/response bodies, headers, and "
+            "tracebacks in memory. Do not enable in production."
+        )
