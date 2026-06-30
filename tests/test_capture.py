@@ -103,13 +103,17 @@ def test_inactive_captures_nothing():
     assert app.test_client().get("/x").status_code == 200  # app still works
 
 
-def test_logs_live_banner(caplog):
-    with caplog.at_level(logging.INFO, logger="reqtap"):
+def test_warns_when_live(caplog):
+    # Activation logs a WARNING (visible by default) so the user can't miss that
+    # sensitive request data is being recorded.
+    with caplog.at_level(logging.WARNING, logger="reqtap"):
         build_app()
-    assert "reqtap: LIVE" in caplog.text
+    assert "reqtap is LIVE" in caplog.text
+    assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
-def test_logs_inactive_hint(caplog):
-    with caplog.at_level(logging.INFO, logger="reqtap"):
+def test_silent_when_inactive(caplog):
+    # The safe default state says nothing at all.
+    with caplog.at_level(logging.WARNING, logger="reqtap"):
         ReqTap(Flask(__name__))
-    assert "inactive" in caplog.text
+    assert caplog.records == []
