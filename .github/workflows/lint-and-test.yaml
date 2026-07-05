@@ -21,7 +21,7 @@ jobs:
       - name: Run Formatter
         run: |
           mypy .
-          ruff check --fix
+          ruff check
 
       - name: Run Test
         run: python -m pytest
