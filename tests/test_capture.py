@@ -46,7 +46,7 @@ def test_get_request_is_captured():
 
 
 
-def test_post_body_is_captured_both_ways():
+def test_post_body_is_captured_both_ways() -> None:
     app, tap = build_app()
     app.test_client().post("/echo", json={"item": "coffee"})
 
@@ -57,7 +57,7 @@ def test_post_body_is_captured_both_ways():
     assert "coffee" in record.response_body
 
 
-def test_error_captures_traceback_and_500():
+def test_error_captures_traceback_and_500() -> None:
     app, tap = build_app()
     app.test_client().get("/boom")
 
