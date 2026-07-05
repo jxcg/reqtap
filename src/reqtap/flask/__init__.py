@@ -5,4 +5,5 @@ framework-agnostic.
 """
 
 from reqtap.flask.extension import ReqTap
+
 __all__ = ["ReqTap"]
