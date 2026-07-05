@@ -1,4 +1,4 @@
-"""Flask (WSGI) adapter — the only adapter in v0.1.
+"""Flask (WSGI) adapter
 
 All Flask-specific coupling lives under this package, keeping ``reqtap.core``
 framework-agnostic.

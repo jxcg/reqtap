@@ -30,6 +30,7 @@ dist/
 *.egg-info/
 
 # Author Misc
+plans/
 plan.md
 BOARD.md
 _DEMO_EXAMPLES
