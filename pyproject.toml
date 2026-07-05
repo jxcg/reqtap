@@ -21,7 +21,7 @@ flask = ["flask>=2.0"]
 dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.4", "flask>=2.0"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["reqtap"]
+packages = ["src/reqtap"]
 
 [tool.ruff]
 line-length = 100
@@ -34,7 +34,7 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 # The dashboard UI ships as data files, not importable modules.
-exclude = ["reqtap/dashboard/"]
+exclude = ["src/reqtap/dashboard/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

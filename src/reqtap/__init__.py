@@ -30,6 +30,7 @@ def __getattr__(name: str) -> Any:
     """
     if name == "ReqTap":
         try:
+            # Import our ReqTap class module with Flask present within extension
             from reqtap.flask.extension import ReqTap
         except ImportError as exc:
             raise ImportError(
