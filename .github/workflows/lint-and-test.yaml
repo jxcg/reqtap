@@ -15,10 +15,9 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
 
-      - name: Run Formatter
+      - name: Run Lint
         run: |
           mypy .
           ruff check
