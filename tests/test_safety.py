@@ -15,7 +15,7 @@ from reqtap.core.safety import is_active
 logger = logging.getLogger(__name__)
 
 
-def test_off_by_default():
+def test_off_by_default() -> None:
     assert is_active() is False
 
 
@@ -26,7 +26,9 @@ def test_off_by_default():
         (False, False),
     ],
 )
-def test_flag_drives_activation(live_reqtap_requests, expected, caplog):
+def test_flag_drives_activation(
+    live_reqtap_requests: bool, expected: bool, caplog: pytest.LogCaptureFixture
+) -> None:
     """The flag is the single source of truth: its value is the gate's answer.
 
     Parametrized over both inputs so one test body covers on and off. The

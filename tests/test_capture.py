@@ -5,33 +5,35 @@ and inspects what landed in the store.
 """
 
 import logging
+from typing import Any, NoReturn
 
-from flask import Flask, jsonify, request
+import pytest
+from flask import Flask, Response, jsonify, request
 
 from reqtap import ReqTap
 
 
-def build_app(**reqtap_kwargs) -> tuple[Flask, ReqTap]:
+def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
     """A 3-endpoint app with reqtap activated; returns (app, tap)."""
     app = Flask(__name__)
 
     @app.get("/bridge")
-    def place():
+    def place() -> Response:
         return jsonify(message=f"Bridge Colour: {request.args.get('bridge_colour', None)}!")
 
     @app.post("/echo")
-    def echo():
+    def echo() -> tuple[Response, int]:
         return jsonify(you_sent=request.get_json(silent=True) or {}), 201
 
     @app.get("/boom")
-    def boom():
+    def boom() -> NoReturn:
         raise RuntimeError("kaboom")
 
     tap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
     return app, tap
 
 
-def test_get_request_is_captured():
+def test_get_request_is_captured() -> None:
     app, tap = build_app()
     app.test_client().get("/bridge?bridge_colour=red")
 
@@ -68,7 +70,7 @@ def test_error_captures_traceback_and_500() -> None:
     assert "kaboom" in record.traceback
 
 
-def test_sensitive_headers_are_redacted():
+def test_sensitive_headers_are_redacted() -> None:
     app, tap = build_app()
     app.test_client().get("/hello", headers={"Authorization": "Bearer secret-token"})
 
@@ -77,7 +79,7 @@ def test_sensitive_headers_are_redacted():
     assert "secret-token" not in str(record.request_headers)
 
 
-def test_large_body_is_truncated():
+def test_large_body_is_truncated() -> None:
     app, tap = build_app(max_body_bytes=10)
     app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
 
@@ -86,18 +88,18 @@ def test_large_body_is_truncated():
     assert len(record.request_body.encode("utf-8")) <= 10
 
 
-def test_dashboard_traffic_is_not_captured():
+def test_dashboard_traffic_is_not_captured() -> None:
     app, tap = build_app()
     # 404s (no dashboard yet), but must be ignored regardless.
     app.test_client().get("/_reqtap/anything")
     assert tap.store.list() == []
 
 
-def test_inactive_captures_nothing():
+def test_inactive_captures_nothing() -> None:
     app = Flask(__name__)
 
     @app.get("/x")
-    def x():
+    def x() -> str:
         return "ok"
 
     tap = ReqTap(app)  # no flag → off
@@ -105,7 +107,7 @@ def test_inactive_captures_nothing():
     assert app.test_client().get("/x").status_code == 200  # app still works
 
 
-def test_warns_when_live(caplog):
+def test_warns_when_live(caplog: pytest.LogCaptureFixture) -> None:
     # Activation logs a WARNING (visible by default) so the user can't miss that
     # sensitive request data is being recorded.
     with caplog.at_level(logging.WARNING, logger="reqtap"):
@@ -114,7 +116,7 @@ def test_warns_when_live(caplog):
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
-def test_silent_when_inactive(caplog):
+def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:
     # The safe default state says nothing at all.
     with caplog.at_level(logging.WARNING, logger="reqtap"):
         ReqTap(Flask(__name__))
