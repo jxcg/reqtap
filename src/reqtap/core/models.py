@@ -38,7 +38,7 @@ class CapturedRequest:
     # Identity / timing. ``id`` is stamped by the store on add().
     id: int = 0
     timestamp: float = 0.0  # epoch seconds, when the request started
-    timestamp_utc: str = ""  # same instant, ISO-8601, for humans reading the JSON
+    timestamp_utc: str = ""  # same instant
     duration_ms: float | None = None
 
     # Request
