@@ -1,4 +1,4 @@
-"""The ``ReqTap`` extension — the one-line entry point.
+"""The ``ReqTap`` extension: the one-line entry point.
 
 ``ReqTap(app, live_reqtap_requests=True)`` wires capture into a Flask app, but
 only after the safety gate says so. When it doesn't, this object registers
@@ -12,6 +12,7 @@ from flask import Flask
 from reqtap.core.safety import is_active
 from reqtap.core.store import RingBufferStore
 from reqtap.flask import intercept
+from reqtap.flask.dashboard import DASHBOARD_PREFIX, create_blueprint
 
 logger = logging.getLogger("reqtap")
 
@@ -44,7 +45,7 @@ class ReqTap:
         self._redact_headers = {
             name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
         }
-        # Stays None while inactive — a useful, checkable signal that reqtap is off.
+        # Stays None while inactive, a useful, checkable signal that reqtap is off.
         self.store: RingBufferStore | None = None
 
         if app is not None:
@@ -52,7 +53,7 @@ class ReqTap:
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
-        """Wire capture into ``app`` — but only if activated.
+        """Wire capture into ``app``, but only if activated.
 
         The safety gate is checked first, before anything is registered. When
         inactive it registers nothing and returns, so a committed ``ReqTap(app)``
@@ -70,6 +71,11 @@ class ReqTap:
             store=self.store,
             max_body_bytes=self.max_body_bytes,
             redact_headers=self._redact_headers,
+        )
+        # Mount the dashboard UI + JSON API at /_reqtap. Without this the capture
+        # hooks run but nothing serves the dashboard, so /_reqtap 404s.
+        app.register_blueprint(
+            create_blueprint(self.store), url_prefix=DASHBOARD_PREFIX
         )
         logger.warning(
             "reqtap is LIVE: recording request/response bodies, headers, and "

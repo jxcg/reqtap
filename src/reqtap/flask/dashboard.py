@@ -1,4 +1,4 @@
-"""The ``/_reqtap`` dashboard — a Flask blueprint serving the UI and its JSON API.
+"""The ``/_reqtap`` dashboard: a Flask blueprint serving the UI and its JSON API.
 
 The blueprint is built by a factory rather than declared at module level because
 the store it reads from belongs to a single :class:`~reqtap.flask.extension.ReqTap`
@@ -17,8 +17,8 @@ from flask import Blueprint, Response, request, send_from_directory
 
 from reqtap.core.store import RingBufferStore
 
-#: Where the dashboard mounts. Defined here — the dashboard owns its own path —
-#: and imported by the intercept layer so it knows which traffic to skip.
+#: Where the dashboard mounts. Defined here, since the dashboard owns its own
+#: path, and imported by the intercept layer so it knows which traffic to skip.
 DASHBOARD_PREFIX = "/_reqtap"
 
 #: Static UI assets ship inside the package, one level up from this adapter.
@@ -73,7 +73,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
     @blueprint.delete("/api/requests")
     def clear_requests() -> Response:
-        """Empty the buffer — the UI's "clear feed" action."""
+        """Empty the buffer, the UI's "clear feed" action."""
         store.clear()
         return _json_response({"cleared": True})
 
@@ -84,7 +84,7 @@ def _json_response(payload: dict[str, Any], status: int = 200) -> Response:
     """Serialize ``payload`` to a JSON response.
 
     Built directly rather than via ``flask.jsonify`` so the dashboard API stays
-    independent of the host app's JSON settings — a custom encoder or sort order
+    independent of the host app's JSON settings. A custom encoder or sort order
     configured for the app's own endpoints shouldn't change reqtap's wire format.
     """
     return Response(
