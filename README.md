@@ -25,3 +25,17 @@ Run your app as normal (e.g. `flask run`). Requests/responses are captured in me
 ## FastAPI
 
 TODO
+
+## Development
+
+```sh
+pip install -e ".[dev]"
+```
+
+Before committing, run:
+
+```sh
+ruff check .
+mypy .
+pytest
+```
