@@ -16,9 +16,11 @@ from flask import Flask, Response, g, request
 
 from reqtap.core.models import CapturedRequest, truncate_text
 from reqtap.core.store import RingBufferStore
+from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
-#: reqtap never captures its own dashboard/API traffic.
-DASHBOARD_PREFIX = "/_reqtap"
+#: reqtap never captures its own dashboard/API traffic — hence the import of
+#: :data:`~reqtap.flask.dashboard.DASHBOARD_PREFIX` above, which the dashboard
+#: owns and this layer only reads.
 
 #: Placeholder shown instead of a redacted header value.
 REDACTED = "<redacted>"
@@ -39,10 +41,14 @@ def install(
 
     Config is captured in this closure rather than read from a global, so the
     hooks stay pure functions of the request plus this fixed configuration.
+    Function only called once.
     """
 
     @app.before_request
     def _begin() -> None:
+        """
+        Grabs a record of the CapturedRequest object
+        """
         if request.path.startswith(DASHBOARD_PREFIX):
             return
 
