@@ -41,13 +41,18 @@ def install(
 
     Config is captured in this closure rather than read from a global, so the
     hooks stay pure functions of the request plus this fixed configuration.
-    Function only called once.
+    Called once, at app startup. It only registers the hooks below — Flask
+    calls them later, per request.
+
+    Request data grabbed at _begin, Response data grabbed at _complete
     """
 
     @app.before_request
     def _begin() -> None:
         """
-        Grabs a record of the CapturedRequest object
+        Create a CapturedRequest object, grabs 'request' data.
+
+        Called by Flask before the route handler runs, once per request.
         """
         if request.path.startswith(DASHBOARD_PREFIX):
             return
@@ -63,11 +68,15 @@ def install(
             request_body=body,
             request_body_truncated=truncated,
         )
+        # g is Flask's per-request scratch object, unique to this request,
+        # shared across all hooks handling it. Stashing record/start_time
+        # here lets _complete and _finalize read them back later.
         setattr(g, _RECORD_KEY, record)
         setattr(g, _START_KEY, time.perf_counter())
 
     @app.after_request
     def _complete(response: Response) -> Response:
+        """Called by Flask after the route handler returns, if it didn't raise."""
         record = getattr(g, _RECORD_KEY, None)
         if record is None:
             return response
@@ -82,6 +91,7 @@ def install(
 
     @app.teardown_request
     def _finalize(exc: BaseException | None) -> None:
+        """Called by Flask at the end of every request, even if the route handler raised."""
         record = getattr(g, _RECORD_KEY, None)
         if record is None:
             return
@@ -105,7 +115,7 @@ def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
 
     Multipart uploads are skipped rather than buffered — reading a file upload
     into memory just to capture it is exactly the overhead reqtap must avoid.
-    Everything else is read (cached so the view can still use it) and truncated.
+    Everything else is read (cached so the route handler can still use it) and truncated.
     """
     if (request.content_type or "").startswith("multipart/form-data"):
         return "<skipped: multipart upload>", False
