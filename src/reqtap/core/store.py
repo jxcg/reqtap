@@ -1,6 +1,6 @@
 """In-memory storage for captured requests.
 
-The one v0.1 backend is :class:`RingBufferStore` — bounded and thread-safe,
+The backend is :class:`RingBufferStore` — bounded and thread-safe,
 which are the two properties that keep reqtap from degrading the host app.
 """
 

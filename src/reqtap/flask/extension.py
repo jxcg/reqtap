@@ -12,6 +12,7 @@ from flask import Flask
 from reqtap.core.safety import is_active
 from reqtap.core.store import RingBufferStore
 from reqtap.flask import intercept
+from reqtap.flask.dashboard import DASHBOARD_PREFIX, create_blueprint
 
 logger = logging.getLogger("reqtap")
 
@@ -70,6 +71,11 @@ class ReqTap:
             store=self.store,
             max_body_bytes=self.max_body_bytes,
             redact_headers=self._redact_headers,
+        )
+        # Mount the dashboard UI + JSON API at /_reqtap. Without this the capture
+        # hooks run but nothing serves the dashboard, so /_reqtap 404s.
+        app.register_blueprint(
+            create_blueprint(self.store), url_prefix=DASHBOARD_PREFIX
         )
         logger.warning(
             "reqtap is LIVE: recording request/response bodies, headers, and "

@@ -11,6 +11,7 @@ raises.
 import time
 import traceback as traceback_module
 from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from flask import Flask, Response, g, request
 
@@ -41,8 +42,7 @@ def install(
 
     Config is captured in this closure rather than read from a global, so the
     hooks stay pure functions of the request plus this fixed configuration.
-    Called once, at app startup. It only registers the hooks below — Flask
-    calls them later, per request.
+    Called once, at app startup. It only registers the hooks below.
 
     Request data grabbed at _begin, Response data grabbed at _complete
     """
@@ -58,8 +58,11 @@ def install(
             return
 
         body, truncated = _capture_request_body(max_body_bytes)
+        now = datetime.now(UTC)
         record = CapturedRequest(
-            timestamp=time.time(),
+            # Both derived from one `now` so they name the exact same instant.
+            timestamp=now.timestamp(),
+            timestamp_utc=now.isoformat(),
             method=request.method,
             path=request.path,
             query_string=request.query_string.decode("utf-8", errors="replace"),

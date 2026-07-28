@@ -38,6 +38,7 @@ class CapturedRequest:
     # Identity / timing. ``id`` is stamped by the store on add().
     id: int = 0
     timestamp: float = 0.0  # epoch seconds, when the request started
+    timestamp_utc: str = ""  # same instant, ISO-8601, for humans reading the JSON
     duration_ms: float | None = None
 
     # Request
@@ -71,6 +72,7 @@ class CapturedRequest:
         return {
             "id": self.id,
             "timestamp": self.timestamp,
+            "timestamp_utc": self.timestamp_utc,
             "duration_ms": self.duration_ms,
             "method": self.method,
             "path": self.path,
