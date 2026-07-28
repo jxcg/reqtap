@@ -1,4 +1,4 @@
-"""The production-safety gate — reqtap's single most important guard.
+"""The production-safety gate: reqtap's single most important guard.
 
 reqtap exposes request bodies, headers, and tracebacks, so it must never run
 where it isn't wanted. Activation is funneled through one function,
@@ -8,8 +8,8 @@ where it isn't wanted. Activation is funneled through one function,
 Why not auto-detect "development mode"? Each framework signals it differently
 (Flask uses ``app.debug``; FastAPI users typically rely on ``uvicorn --reload``
 and leave ``app.debug`` False), and those conventions drift across versions.
-Keying off them would make reqtap behave inconsistently from one framework — or
-one release — to the next. One explicit constructor flag is the single source
+Keying off them would make reqtap behave inconsistently from one framework, or
+one release, to the next. One explicit constructor flag is the single source
 of truth: simpler, identical everywhere, and trivial to reason about.
 """
 

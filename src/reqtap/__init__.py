@@ -1,4 +1,4 @@
-"""reqtap — a wiretap for your web app's requests.
+"""reqtap: a wiretap for your web app's requests.
 
 Public API:
     from reqtap import ReqTap

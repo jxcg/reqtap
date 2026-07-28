@@ -1,4 +1,4 @@
-"""The ``ReqTap`` extension — the one-line entry point.
+"""The ``ReqTap`` extension: the one-line entry point.
 
 ``ReqTap(app, live_reqtap_requests=True)`` wires capture into a Flask app, but
 only after the safety gate says so. When it doesn't, this object registers
@@ -45,7 +45,7 @@ class ReqTap:
         self._redact_headers = {
             name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
         }
-        # Stays None while inactive — a useful, checkable signal that reqtap is off.
+        # Stays None while inactive, a useful, checkable signal that reqtap is off.
         self.store: RingBufferStore | None = None
 
         if app is not None:
@@ -53,7 +53,7 @@ class ReqTap:
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
-        """Wire capture into ``app`` — but only if activated.
+        """Wire capture into ``app``, but only if activated.
 
         The safety gate is checked first, before anything is registered. When
         inactive it registers nothing and returns, so a committed ``ReqTap(app)``

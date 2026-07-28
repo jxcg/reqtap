@@ -37,7 +37,7 @@ The dashboard is a thin client over a small JSON API, all under the `/_reqtap` p
 | -------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | `GET`    | `/_reqtap/api/requests`       | Captured requests as lightweight summaries, newest first. Pass `?since=<id>` to get only records newer than an id you already hold (incremental polling). |
 | `GET`    | `/_reqtap/api/requests/<id>`  | Full detail for one captured request. `404` once it has been evicted from the ring buffer.      |
-| `DELETE` | `/_reqtap/api/requests`       | Clear the buffer — the dashboard's "clear feed" action.                                          |
+| `DELETE` | `/_reqtap/api/requests`       | Clear the buffer, the dashboard's "clear feed" action.                                           |
 
 Responses are `application/json`. The buffer is in-memory and bounded (`buffer_size`, default 200), so old records are evicted as new ones arrive.
 

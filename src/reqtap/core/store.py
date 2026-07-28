@@ -1,6 +1,6 @@
 """In-memory storage for captured requests.
 
-The backend is :class:`RingBufferStore` — bounded and thread-safe,
+The backend is :class:`RingBufferStore`, bounded and thread-safe,
 which are the two properties that keep reqtap from degrading the host app.
 """
 
@@ -46,7 +46,7 @@ class RingBufferStore:
 
         A linear scan is fine here: the buffer is small (≤ capacity), and a side
         index would only have to be kept in sync with the deque's automatic
-        eviction — more complexity than an O(n) walk is worth.
+        eviction, more complexity than an O(n) walk is worth.
         """
         with self._lock:
             for record in self._buffer:

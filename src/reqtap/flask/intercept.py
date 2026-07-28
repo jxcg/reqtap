@@ -4,7 +4,7 @@ Three hooks, one record. ``before_request`` starts a :class:`CapturedRequest`
 and stashes it on ``flask.g``; ``after_request`` fills in the response;
 ``teardown_request`` adds a traceback if the handler raised and commits the
 record to the store. ``teardown_request`` always runs (even on error), so it's
-the reliable place to finalize — ``after_request`` is skipped when a request
+the reliable place to finalize. ``after_request`` is skipped when a request
 raises.
 """
 
@@ -19,7 +19,7 @@ from reqtap.core.models import CapturedRequest, truncate_text
 from reqtap.core.store import RingBufferStore
 from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
-#: reqtap never captures its own dashboard/API traffic — hence the import of
+#: reqtap never captures its own dashboard/API traffic, hence the import of
 #: :data:`~reqtap.flask.dashboard.DASHBOARD_PREFIX` above, which the dashboard
 #: owns and this layer only reads.
 
@@ -116,7 +116,7 @@ def install(
 def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
     """Capture the request body, truncated to ``max_body_bytes`` for storage.
 
-    Multipart uploads are skipped rather than buffered — reading a file upload
+    Multipart uploads are skipped rather than buffered. Reading a file upload
     into memory just to capture it is exactly the overhead reqtap must avoid.
     Everything else is read (cached so the route handler can still use it) and truncated.
     """
@@ -131,8 +131,8 @@ def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
 def _capture_response_body(response: Response, max_body_bytes: int) -> tuple[str, bool]:
     """Capture the response body, skipping streamed/file responses.
 
-    ``direct_passthrough`` responses (e.g. ``send_file``) must not be read here
-    — doing so would consume the stream the real client needs.
+    ``direct_passthrough`` responses (e.g. ``send_file``) must not be read here,
+    since doing so would consume the stream the real client needs.
     """
     if response.direct_passthrough:
         return "<skipped: streamed response>", False

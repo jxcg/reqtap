@@ -1,7 +1,7 @@
 """The captured-request record and helpers for shaping it safely.
 
 Everything here is a plain snapshot: stdlib dataclasses holding copied strings
-and primitives, never live Flask/response objects. That's deliberate — see the
+and primitives, never live Flask/response objects. That's deliberate; see the
 memory-safety notes on :class:`CapturedRequest`.
 """
 
@@ -30,8 +30,8 @@ class CapturedRequest:
 
     Built up across the request lifecycle (request fields first, response fields
     on the way out, traceback if it raised) and then handed to the store. Holds
-    only copied primitives and strings — no references to Flask's ``request`` /
-    ``response`` / ``session`` objects or to a live traceback — so storing it
+    only copied primitives and strings, no references to Flask's ``request`` /
+    ``response`` / ``session`` objects or to a live traceback, so storing it
     can't pin large object graphs or stack frames in memory.
     """
 
@@ -64,7 +64,7 @@ class CapturedRequest:
         return asdict(self)
 
     def to_summary(self) -> dict[str, Any]:
-        """Lightweight form for the live feed — no bodies or headers.
+        """Lightweight form for the live feed, no bodies or headers.
 
         The feed can hold many rows, so it omits the heavy fields; the client
         fetches the full record via :meth:`to_dict` only when a row is opened.
