@@ -1,8 +1,4 @@
-"""Flask (WSGI) adapter
-
-All Flask-specific coupling lives under this package, keeping ``reqtap.core``
-framework-agnostic.
-"""
+"""Flask adapter. Import ``ReqTap`` from the top-level ``reqtap`` package."""
 
 from reqtap.flask.extension import ReqTap
 
