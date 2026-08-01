@@ -1,11 +1,7 @@
-"""Request-lifecycle capture for Flask.
+"""Flask lifecycle hooks: start a record, fill response, commit to store.
 
-Three hooks, one record. ``before_request`` starts a :class:`CapturedRequest`
-and stashes it on ``flask.g``; ``after_request`` fills in the response;
-``teardown_request`` adds a traceback if the handler raised and commits the
-record to the store. ``teardown_request`` always runs (even on error), so it's
-the reliable place to finalize. ``after_request`` is skipped when a request
-raises.
+``before_request`` starts it, ``after_request`` adds the response,
+``teardown_request`` always runs and saves the record (even on errors).
 """
 
 import time
@@ -19,14 +15,12 @@ from reqtap.core.models import CapturedRequest, truncate_text
 from reqtap.core.store import RingBufferStore
 from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
-#: reqtap never captures its own dashboard/API traffic, hence the import of
-#: :data:`~reqtap.flask.dashboard.DASHBOARD_PREFIX` above, which the dashboard
-#: owns and this layer only reads.
+#: Interceptor skips dashboard traffic. Prefix lives in dashboard.py.
 
 #: Placeholder shown instead of a redacted header value.
 REDACTED = "<redacted>"
 
-# Keys used to stash per-request state on ``flask.g``.
+# Per-request scratch keys on flask.g.
 _RECORD_KEY = "_reqtap_record"
 _START_KEY = "_reqtap_perf_start"
 
@@ -38,29 +32,18 @@ def install(
     max_body_bytes: int,
     redact_headers: set[str],
 ) -> None:
-    """Register the three capture hooks on ``app``.
-
-    Config is captured in this closure rather than read from a global, so the
-    hooks stay pure functions of the request plus this fixed configuration.
-    Called once, at app startup. It only registers the hooks below.
-
-    Request data grabbed at _begin, Response data grabbed at _complete
-    """
+    """Register capture hooks on ``app``. Called once at startup."""
 
     @app.before_request
     def _begin() -> None:
-        """
-        Create a CapturedRequest object, grabs 'request' data.
-
-        Called by Flask before the route handler runs, once per request.
-        """
+        """Grab request fields before the route handler runs."""
         if request.path.startswith(DASHBOARD_PREFIX):
             return
 
         body, truncated = _capture_request_body(max_body_bytes)
         now = datetime.now(UTC)
         record = CapturedRequest(
-            # Both derived from one `now` so they name the exact same instant.
+            # Same instant, two formats.
             timestamp=now.timestamp(),
             timestamp_utc=now.isoformat(),
             method=request.method,
@@ -71,15 +54,13 @@ def install(
             request_body=body,
             request_body_truncated=truncated,
         )
-        # g is Flask's per-request scratch object, unique to this request,
-        # shared across all hooks handling it. Stashing record/start_time
-        # here lets _complete and _finalize read them back later.
+        # Stash on g so later hooks can find this record.
         setattr(g, _RECORD_KEY, record)
         setattr(g, _START_KEY, time.perf_counter())
 
     @app.after_request
     def _complete(response: Response) -> Response:
-        """Called by Flask after the route handler returns, if it didn't raise."""
+        """Fill in response fields after the handler returns."""
         record = getattr(g, _RECORD_KEY, None)
         if record is None:
             return response
@@ -94,7 +75,7 @@ def install(
 
     @app.teardown_request
     def _finalize(exc: BaseException | None) -> None:
-        """Called by Flask at the end of every request, even if the route handler raised."""
+        """Save the record. Runs even when the handler raised."""
         record = getattr(g, _RECORD_KEY, None)
         if record is None:
             return
@@ -103,8 +84,7 @@ def install(
             record.traceback = "".join(
                 traceback_module.format_exception(type(exc), exc, exc.__traceback__)
             )
-            # after_request was skipped because the request raised, so fill in
-            # what it would have set.
+            # Handler raised, so after_request never ran. Patch in what we can.
             if record.status is None:
                 record.status = 500
             if record.duration_ms is None:
@@ -114,11 +94,9 @@ def install(
 
 
 def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
-    """Capture the request body, truncated to ``max_body_bytes`` for storage.
+    """Read and truncate the request body.
 
-    Multipart uploads are skipped rather than buffered. Reading a file upload
-    into memory just to capture it is exactly the overhead reqtap must avoid.
-    Everything else is read (cached so the route handler can still use it) and truncated.
+    Skips multipart uploads (don't buffer files into memory for no reason).
     """
     if (request.content_type or "").startswith("multipart/form-data"):
         return "<skipped: multipart upload>", False
@@ -129,10 +107,9 @@ def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
 
 
 def _capture_response_body(response: Response, max_body_bytes: int) -> tuple[str, bool]:
-    """Capture the response body, skipping streamed/file responses.
+    """Read and truncate the response body.
 
-    ``direct_passthrough`` responses (e.g. ``send_file``) must not be read here,
-    since doing so would consume the stream the real client needs.
+    Skips streamed responses (send_file etc.) so we don't consume the stream.
     """
     if response.direct_passthrough:
         return "<skipped: streamed response>", False
@@ -144,7 +121,7 @@ def _capture_response_body(response: Response, max_body_bytes: int) -> tuple[str
 def _redact(
     header_items: Iterable[tuple[str, str]], redact_headers: set[str]
 ) -> dict[str, str]:
-    """Copy header (name, value) pairs to a plain dict, masking redacted names."""
+    """Copy headers to a dict, masking anything on the redact list."""
     return {
         key: (REDACTED if key.lower() in redact_headers else value)
         for key, value in header_items
@@ -152,6 +129,6 @@ def _redact(
 
 
 def _elapsed_ms() -> float:
-    """Milliseconds since this request's perf-counter start."""
+    """How long this request took, in milliseconds."""
     start: float = getattr(g, _START_KEY, time.perf_counter())
     return (time.perf_counter() - start) * 1000

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "reqtap"
 version = "0.0.1"
-description = "A wiretap for your web app's requests — passively capture and inspect every request from inside your Flask app."
+description = "A wiretap for your web app's requests. Passively capture and inspect traffic from inside your Flask app."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

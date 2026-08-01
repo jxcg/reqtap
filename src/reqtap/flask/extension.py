@@ -1,8 +1,6 @@
-"""The ``ReqTap`` extension: the one-line entry point.
+"""One-line entry point: ``ReqTap(app, live_reqtap_requests=True)``.
 
-``ReqTap(app, live_reqtap_requests=True)`` wires capture into a Flask app, but
-only after the safety gate says so. When it doesn't, this object registers
-nothing and intercepts nothing.
+Does nothing unless the safety gate passes. When live, mounts ``/_reqtap/``.
 """
 
 import logging
@@ -20,12 +18,11 @@ DEFAULT_REDACT_HEADERS = ["Authorization", "Cookie"]
 
 
 class ReqTap:
-    """Flask extension that passively captures requests when activated.
+    """Captures requests when activated. Opens ``/_reqtap/`` for inspection.
 
-    Supports both the direct form ``ReqTap(app, ...)`` and the app-factory form
-    (``tap = ReqTap(...)`` then ``tap.init_app(app)``). The three config knobs
-    tune capture behavior; ``live_reqtap_requests`` is the activation switch and
-    the single source of truth for whether reqtap runs at all.
+    Use ``ReqTap(app, ...)`` or ``ReqTap().init_app(app)``.
+    ``live_reqtap_requests`` turns it on; other args tune buffer, body size,
+    and header redaction.
     """
 
     def __init__(
@@ -40,28 +37,23 @@ class ReqTap:
         self.live_reqtap_requests = live_reqtap_requests
         self.buffer_size = buffer_size
         self.max_body_bytes = max_body_bytes
-        # Normalize to a lowercase set once, so per-request matching is cheap and
-        # case-insensitive.
+        # Lowercase once so header matching is fast and case-insensitive.
         self._redact_headers = {
             name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
         }
-        # Stays None while inactive, a useful, checkable signal that reqtap is off.
+        # None means reqtap is off. Handy to check in tests.
         self.store: RingBufferStore | None = None
 
         if app is not None:
-            # Check if flask app is available; initialise app
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
-        """Wire capture into ``app``, but only if activated.
+        """Hook reqtap into ``app`` if activated.
 
-        The safety gate is checked first, before anything is registered. When
-        inactive it registers nothing and returns, so a committed ``ReqTap(app)``
-        line is completely inert and silent. When active it logs a WARNING so
-        the user can't miss that sensitive request data is being recorded.
+        Inactive: registers nothing, stays silent.
+        Active: logs a warning so you know sensitive data is being recorded.
         """
 
-        # Check if constructor has enabled /_reqtap to record
         if not is_active(self.live_reqtap_requests):
             return
 
@@ -72,8 +64,7 @@ class ReqTap:
             max_body_bytes=self.max_body_bytes,
             redact_headers=self._redact_headers,
         )
-        # Mount the dashboard UI + JSON API at /_reqtap. Without this the capture
-        # hooks run but nothing serves the dashboard, so /_reqtap 404s.
+        # Mount dashboard + API. Without this, /_reqtap 404s even though capture works.
         app.register_blueprint(
             create_blueprint(self.store), url_prefix=DASHBOARD_PREFIX
         )

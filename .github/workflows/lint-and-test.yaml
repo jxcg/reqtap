@@ -8,12 +8,19 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      # Without this, the first failing version cancels the others and hides
+      # whether the break is version-specific or universal.
+      fail-fast: false
+      matrix:
+        # Every version pyproject.toml's requires-python claims to support.
+        python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python-version }}
       - name: Install Dependencies (Lint)
         run: |
           python -m pip install --upgrade pip
