@@ -7,4 +7,4 @@ One explicit flag keeps behaviour predictable everywhere.
 
 def is_active(live_reqtap_requests: bool = False) -> bool:
     """True only when ``live_reqtap_requests=True`` was passed to ReqTap."""
-    return live_reqtap_requests
+    return live_reqtap_requests is True

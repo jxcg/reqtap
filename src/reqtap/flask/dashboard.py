@@ -6,10 +6,11 @@ The interceptor ignores this path, so the dashboard never captures itself.
 """
 
 import json
+from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, Response, request, send_from_directory
+from flask import Blueprint, Response, abort, request, send_from_directory
 
 from reqtap.core.store import RingBufferStore
 
@@ -31,6 +32,18 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         static_folder=str(_UI_DIRECTORY),
         static_url_path="/static",
     )
+
+    @blueprint.before_request
+    def require_local_access() -> None:
+        """Keep captured application data inaccessible to remote clients."""
+        if not _is_loopback_address(request.remote_addr):
+            abort(403)
+
+    @blueprint.after_request
+    def prevent_caching(response: Response) -> Response:
+        """Captured bodies, headers, and tracebacks must never be cached."""
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @blueprint.get("/")
     def index() -> Response:
@@ -69,6 +82,27 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         return _json_response({"cleared": True})
 
     return blueprint
+
+
+def _is_loopback_address(address: str | None) -> bool:
+    """Return whether a WSGI peer address is an IPv4 or IPv6 loopback."""
+    if address is None:
+        return False
+
+    try:
+        parsed = ip_address(address)
+    except ValueError:
+        return False
+
+    if parsed.is_loopback:
+        return True
+
+    # Some WSGI servers represent IPv4 peers as IPv4-mapped IPv6 addresses.
+    return (
+        isinstance(parsed, IPv6Address)
+        and parsed.ipv4_mapped is not None
+        and parsed.ipv4_mapped.is_loopback
+    )
 
 
 def _json_response(payload: dict[str, Any], status: int = 200) -> Response:

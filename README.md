@@ -27,7 +27,7 @@ Run your app as normal. Requests/responses are captured in memory only, precisel
 
 ### Dashboard
 
-Once active, reqtap mounts a dashboard at **`/_reqtap/`**. Open it in a browser to watch traffic live. reqtap never captures its own dashboard traffic.
+Once active, reqtap mounts a dashboard at **`/_reqtap/`**. Open it from the same machine to watch traffic live. The dashboard and API only accept loopback clients, never cache their responses, and never capture their own traffic. Do not publish the dashboard through a reverse proxy: proxied clients may appear to reqtap as the proxy's loopback address.
 
 ### JSON API
 
