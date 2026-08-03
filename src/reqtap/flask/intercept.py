@@ -40,8 +40,10 @@ def install(
         if request.path.startswith(DASHBOARD_PREFIX):
             return
 
-        body, truncated = _capture_request_body(max_body_bytes)
+        # Include request capture, just as the end time includes response capture.
         now = datetime.now(UTC)
+        start = time.perf_counter()
+        body, truncated = _capture_request_body(max_body_bytes)
         record = CapturedRequest(
             # Same instant, two formats.
             timestamp=now.timestamp(),
@@ -56,7 +58,7 @@ def install(
         )
         # Stash on g so later hooks can find this record.
         setattr(g, _RECORD_KEY, record)
-        setattr(g, _START_KEY, time.perf_counter())
+        setattr(g, _START_KEY, start)
 
     @app.after_request
     def _complete(response: Response) -> Response:
