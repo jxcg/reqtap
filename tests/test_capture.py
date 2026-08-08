@@ -5,6 +5,7 @@ and inspects what landed in the store.
 """
 
 import logging
+from io import BytesIO
 from datetime import datetime
 from typing import Any, NoReturn
 
@@ -173,3 +174,74 @@ def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="reqtap"):
         ReqTap(Flask(__name__))
     assert caplog.records == []
+
+
+# Werkzeug's cache covers get_data/form/json but not request.stream, so the
+# raw-stream path needs its own coverage.
+
+
+def build_body_reader_app(read_body: Any) -> tuple[Flask, ReqTap]:
+    """App whose single route reads the body via the supplied accessor."""
+    app = Flask(__name__)
+
+    @app.post("/read")
+    def read() -> str:
+        return repr(read_body())
+
+    tap = ReqTap(app, live_reqtap_requests=True)
+    return app, tap
+
+
+def test_handler_can_still_read_raw_stream() -> None:
+    app, tap = build_body_reader_app(lambda: request.stream.read())
+    response = app.test_client().post("/read", data=b"payload")
+
+    assert response.get_data(as_text=True) == repr(b"payload")
+    assert "payload" in tap.store.list()[0].request_body
+
+
+def test_raw_stream_is_readable_in_chunks() -> None:
+    # Must act like a stream, not replay bytes once: partial reads resume.
+    app, _ = build_body_reader_app(
+        lambda: (request.stream.read(3), request.stream.read())
+    )
+    response = app.test_client().post("/read", data=b"payload")
+
+    assert response.get_data(as_text=True) == repr((b"pay", b"load"))
+
+
+def test_empty_body_still_gives_a_usable_stream() -> None:
+    app, _ = build_body_reader_app(lambda: request.stream.read())
+    response = app.test_client().post("/read", data=b"")
+
+    assert response.get_data(as_text=True) == repr(b"")
+
+
+def test_form_and_json_parsing_still_work() -> None:
+    # Cached path, not request.stream — guard against a fix that breaks it.
+    form_app, _ = build_body_reader_app(lambda: dict(request.form))
+    assert form_app.test_client().post("/read", data={"a": "1"}).get_data(
+        as_text=True
+    ) == repr({"a": "1"})
+
+    json_app, _ = build_body_reader_app(lambda: request.get_json())
+    assert json_app.test_client().post("/read", json={"a": 1}).get_data(
+        as_text=True
+    ) == repr({"a": 1})
+
+
+def test_multipart_upload_stream_is_untouched() -> None:
+    # The multipart branch returns before reading, so files must still parse.
+    app = Flask(__name__)
+
+    @app.post("/upload")
+    def upload() -> str:
+        return repr(request.files["f"].read())
+
+    tap = ReqTap(app, live_reqtap_requests=True)
+    response = app.test_client().post(
+        "/upload", data={"f": (BytesIO(b"file-bytes"), "f.txt")}
+    )
+
+    assert response.get_data(as_text=True) == repr(b"file-bytes")
+    assert tap.store.list()[0].request_body == "<skipped: multipart upload>"
