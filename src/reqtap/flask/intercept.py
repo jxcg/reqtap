@@ -9,6 +9,7 @@ import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from io import BytesIO
 
 from flask import Flask, Response, g, request
 
@@ -122,6 +123,9 @@ def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
         return "<skipped: multipart upload>", False
 
     raw = request.get_data(cache=True)
+    # get_data() drains the one-shot WSGI body. Werkzeug's cache covers
+    # get_data/form/json but not request.stream, so rewind it for raw readers.
+    request.stream = BytesIO(raw)
     text = raw.decode("utf-8", errors="replace")
     return truncate_text(text, max_body_bytes)
 
