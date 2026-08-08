@@ -34,13 +34,30 @@ jobs:
       - name: Run Test
         run: python -m pytest
 
+  # CI installs with `pip install -e .`, which resolves to the source tree, so
+  # no test can notice a data file missing from the built wheel. Look inside it.
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+      - name: Dashboard UI is packaged
+        run: python scripts/check_wheel_contents.py
+
   # Branch protection matches status checks by exact name, but matrix jobs
   # report one context per leg ("lint-and-test (3.11)", ...). Requiring those
   # directly means editing the ruleset every time a Python version changes, and
   # forgetting to leaves that version silently ungated. This job exists only to
   # give the ruleset one stable name to require.
   verification-gate:
-    needs: lint-and-test
+    needs: [lint-and-test, packaging]
     runs-on: ubuntu-latest
     # Without always(), a failing matrix skips this job, so it never reports and
     # the PR waits forever instead of showing a failure.
@@ -48,6 +65,6 @@ jobs:
     steps:
       # always() would otherwise let this job pass on its own emptiness. The
       # result of a matrix job is 'success' only when every leg succeeded.
-      - name: Fail unless every matrix leg succeeded
-        if: needs.lint-and-test.result != 'success'
+      - name: Fail unless every job succeeded
+        if: needs.lint-and-test.result != 'success' || needs.packaging.result != 'success'
         run: exit 1

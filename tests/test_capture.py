@@ -142,7 +142,7 @@ def test_large_body_is_truncated() -> None:
 
 def test_dashboard_traffic_is_not_captured() -> None:
     app, tap = build_app()
-    # 404s (no dashboard yet), but must be ignored regardless.
+    # Status doesn't matter: the skip is on the path prefix, not the outcome.
     app.test_client().get("/_reqtap/anything")
     assert tap.store.list() == []
 
