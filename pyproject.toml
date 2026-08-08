@@ -17,8 +17,8 @@ dependencies = []
 # Flask is an optional extra: the core package has zero hard dependencies, so
 # `import reqtap` works without it. The Flask adapter (the only one in v0.1)
 # needs it, hence `pip install reqtap[flask]`.
-flask = ["flask>=2.0"]
-dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.4", "flask>=2.0"]
+flask = ["flask>=3.0"]
+dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.4", "flask>=3.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reqtap"]

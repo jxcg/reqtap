@@ -6,12 +6,14 @@ and inspects what landed in the store.
 
 import logging
 from io import BytesIO
+from datetime import datetime
 from typing import Any, NoReturn
 
 import pytest
 from flask import Flask, Response, jsonify, request
 
 from reqtap import ReqTap
+from reqtap.flask import intercept
 
 
 def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
@@ -47,6 +49,56 @@ def test_get_request_is_captured() -> None:
     assert record.duration_ms is not None and record.duration_ms >= 0
     assert "Bridge Colour: red" in record.response_body
 
+
+def test_timing_covers_request_and_response_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = Flask(__name__)
+    clock = 0.0
+    events: list[str] = []
+    original_capture_request_body = intercept._capture_request_body
+    original_capture_response_body = intercept._capture_response_body
+
+    class RecordingDateTime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            events.append("timestamp")
+            return datetime.now(tz)
+
+    def perf_counter() -> float:
+        events.append("timer")
+        return clock
+
+    def capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
+        nonlocal clock
+        events.append("request body")
+        clock += 0.01
+        return original_capture_request_body(max_body_bytes)
+
+    def capture_response_body(response: Response, max_body_bytes: int) -> tuple[str, bool]:
+        nonlocal clock
+        events.append("response body")
+        clock += 0.03
+        return original_capture_response_body(response, max_body_bytes)
+
+    monkeypatch.setattr(intercept, "datetime", RecordingDateTime)
+    monkeypatch.setattr(intercept.time, "perf_counter", perf_counter)
+    monkeypatch.setattr(intercept, "_capture_request_body", capture_request_body)
+    monkeypatch.setattr(intercept, "_capture_response_body", capture_response_body)
+
+    @app.post("/timed")
+    def timed() -> str:
+        nonlocal clock
+        clock += 0.02
+        return "ok"
+
+    tap = ReqTap(app, live_reqtap_requests=True)
+    app.test_client().post("/timed", data="payload")
+
+    record = tap.store.list()[0]
+    assert events.index("timestamp") < events.index("request body")
+    assert events.index("timer") < events.index("request body")
+    assert record.duration_ms == pytest.approx(60.0)
 
 
 def test_post_body_is_captured_both_ways() -> None:
@@ -91,7 +143,7 @@ def test_large_body_is_truncated() -> None:
 
 def test_dashboard_traffic_is_not_captured() -> None:
     app, tap = build_app()
-    # 404s (no dashboard yet), but must be ignored regardless.
+    # Status doesn't matter: the skip is on the path prefix, not the outcome.
     app.test_client().get("/_reqtap/anything")
     assert tap.store.list() == []
 
