@@ -8,6 +8,7 @@ import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from io import BytesIO
 
 from flask import Flask, Response, g, request
 
@@ -15,9 +16,7 @@ from reqtap.core.models import CapturedRequest, truncate_text
 from reqtap.core.store import RingBufferStore
 from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
-#: Interceptor skips dashboard traffic. Prefix lives in dashboard.py.
-
-#: Placeholder shown instead of a redacted header value.
+# Placeholder shown instead of a redacted header value.
 REDACTED = "<redacted>"
 
 # Per-request scratch keys on flask.g.
@@ -102,6 +101,9 @@ def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
         return "<skipped: multipart upload>", False
 
     raw = request.get_data(cache=True)
+    # get_data() drains the one-shot WSGI body. Werkzeug's cache covers
+    # get_data/form/json but not request.stream, so rewind it for raw readers.
+    request.stream = BytesIO(raw)
     text = raw.decode("utf-8", errors="replace")
     return truncate_text(text, max_body_bytes)
 
