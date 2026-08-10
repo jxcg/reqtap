@@ -57,8 +57,10 @@ def test_timing_covers_request_and_response_capture(
     app = Flask(__name__)
     clock = 0.0
     events: list[str] = []
-    original_capture_request_body = intercept._capture_request_body
-    original_capture_response_body = intercept._capture_response_body
+    # Held before patching: the wrappers below replace these module attributes,
+    # so calling them by name from inside a wrapper would recurse.
+    real_capture_request_body = intercept._capture_request_body
+    real_capture_response_body = intercept._capture_response_body
 
     class RecordingDateTime(datetime):
         @classmethod
@@ -74,13 +76,13 @@ def test_timing_covers_request_and_response_capture(
         nonlocal clock
         events.append("request body")
         clock += 0.01
-        return original_capture_request_body(body_preview_bytes)
+        return real_capture_request_body(body_preview_bytes)
 
     def capture_response_body(response: Response, body_preview_bytes: int) -> tuple[str, bool]:
         nonlocal clock
         events.append("response body")
         clock += 0.03
-        return original_capture_response_body(response, body_preview_bytes)
+        return real_capture_response_body(response, body_preview_bytes)
 
     monkeypatch.setattr(intercept, "datetime", RecordingDateTime)
     monkeypatch.setattr(time, "perf_counter", perf_counter)
