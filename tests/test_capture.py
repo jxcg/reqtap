@@ -5,8 +5,9 @@ and inspects what landed in the store.
 """
 
 import logging
-from io import BytesIO
+import time
 from datetime import datetime
+from io import BytesIO
 from typing import Any, NoReturn
 
 import pytest
@@ -61,28 +62,28 @@ def test_timing_covers_request_and_response_capture(
 
     class RecordingDateTime(datetime):
         @classmethod
-        def now(cls, tz: Any = None) -> datetime:
+        def now(cls, tz: Any = None) -> "RecordingDateTime":
             events.append("timestamp")
-            return datetime.now(tz)
+            return super().now(tz)
 
     def perf_counter() -> float:
         events.append("timer")
         return clock
 
-    def capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
+    def capture_request_body(body_preview_bytes: int) -> tuple[str, bool]:
         nonlocal clock
         events.append("request body")
         clock += 0.01
-        return original_capture_request_body(max_body_bytes)
+        return original_capture_request_body(body_preview_bytes)
 
-    def capture_response_body(response: Response, max_body_bytes: int) -> tuple[str, bool]:
+    def capture_response_body(response: Response, body_preview_bytes: int) -> tuple[str, bool]:
         nonlocal clock
         events.append("response body")
         clock += 0.03
-        return original_capture_response_body(response, max_body_bytes)
+        return original_capture_response_body(response, body_preview_bytes)
 
     monkeypatch.setattr(intercept, "datetime", RecordingDateTime)
-    monkeypatch.setattr(intercept.time, "perf_counter", perf_counter)
+    monkeypatch.setattr(time, "perf_counter", perf_counter)
     monkeypatch.setattr(intercept, "_capture_request_body", capture_request_body)
     monkeypatch.setattr(intercept, "_capture_response_body", capture_response_body)
 
@@ -133,7 +134,7 @@ def test_sensitive_headers_are_redacted() -> None:
 
 
 def test_large_body_is_truncated() -> None:
-    app, tap = build_app(max_body_bytes=10)
+    app, tap = build_app(body_preview_bytes=10)
     app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
 
     record = tap.store.list()[0]
@@ -176,8 +177,8 @@ def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:
     assert caplog.records == []
 
 
-# Werkzeug's cache covers get_data/form/json but not request.stream, so the
-# raw-stream path needs its own coverage.
+# Capture runs after the handler now, so these pin that reqtap stays out of the
+# way of every way a handler can read the body.
 
 
 def build_body_reader_app(read_body: Any) -> tuple[Flask, ReqTap]:
@@ -197,24 +198,11 @@ def test_handler_can_still_read_raw_stream() -> None:
     response = app.test_client().post("/read", data=b"payload")
 
     assert response.get_data(as_text=True) == repr(b"payload")
-    assert "payload" in tap.store.list()[0].request_body
-
-
-def test_raw_stream_is_readable_in_chunks() -> None:
-    # Must act like a stream, not replay bytes once: partial reads resume.
-    app, _ = build_body_reader_app(
-        lambda: (request.stream.read(3), request.stream.read())
-    )
-    response = app.test_client().post("/read", data=b"payload")
-
-    assert response.get_data(as_text=True) == repr((b"pay", b"load"))
-
-
-def test_empty_body_still_gives_a_usable_stream() -> None:
-    app, _ = build_body_reader_app(lambda: request.stream.read())
-    response = app.test_client().post("/read", data=b"")
-
-    assert response.get_data(as_text=True) == repr(b"")
+    # Reading the stream directly leaves werkzeug nothing cached, and capture
+    # runs after the handler, so the body is gone. Say so rather than show "".
+    record = tap.store.list()[0]
+    assert record.request_body == "<skipped: body consumed by handler>"
+    assert record.request_body_total_bytes == 7
 
 
 def test_form_and_json_parsing_still_work() -> None:

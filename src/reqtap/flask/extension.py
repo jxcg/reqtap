@@ -21,8 +21,9 @@ class ReqTap:
     """Captures requests when activated. Opens ``/_reqtap/`` for inspection.
 
     Use ``ReqTap(app, ...)`` or ``ReqTap().init_app(app)``.
-    ``live_reqtap_requests`` turns it on; other args tune buffer, body size,
-    and header redaction.
+    ``live_reqtap_requests`` turns it on; other args tune buffer, body preview
+    size, and header redaction. ``body_preview_bytes`` caps how much of each
+    body is kept and read — rejecting big requests is ``MAX_CONTENT_LENGTH``.
     """
 
     def __init__(
@@ -31,12 +32,12 @@ class ReqTap:
         *,
         live_reqtap_requests: bool = False,
         buffer_size: int = 200,
-        max_body_bytes: int = 64_000,
+        body_preview_bytes: int = 64_000,
         redact_headers: list[str] | None = None,
     ) -> None:
         self.live_reqtap_requests = live_reqtap_requests
         self.buffer_size = buffer_size
-        self.max_body_bytes = max_body_bytes
+        self.body_preview_bytes = body_preview_bytes
         # Lowercase once so header matching is fast and case-insensitive.
         self._redact_headers = {
             name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
@@ -61,7 +62,7 @@ class ReqTap:
         intercept.install(
             app,
             store=self.store,
-            max_body_bytes=self.max_body_bytes,
+            body_preview_bytes=self.body_preview_bytes,
             redact_headers=self._redact_headers,
         )
         # Mount dashboard + API. Without this, /_reqtap 404s even though capture works.

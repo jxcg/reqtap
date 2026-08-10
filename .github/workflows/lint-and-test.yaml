@@ -26,10 +26,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Run Lint
-        run: ruff check src
+        run: |
+          ruff check src
+          ruff check tests
 
       - name: Mypy (type check)
-        run: mypy src
+        run: |
+            mypy src
+            mypy tests
 
       - name: Run Test
         run: python -m pytest

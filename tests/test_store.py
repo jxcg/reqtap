@@ -6,7 +6,7 @@ size. If any of these regress, reqtap could grow without limit inside the host
 process.
 """
 
-from reqtap.core.models import CapturedRequest, truncate_text
+from reqtap.core.models import CapturedRequest, decode_preview
 from reqtap.core.store import RingBufferStore
 
 
@@ -14,26 +14,32 @@ def make_record(method: str = "GET", path: str = "/") -> CapturedRequest:
     return CapturedRequest(method=method, path=path)
 
 
-# --- truncate_text ---------------------------------------------------------
+# --- decode_preview --------------------------------------------------------
 
 
-def test_truncate_leaves_small_text_untouched() -> None:
-    text, was_truncated = truncate_text("hello", max_bytes=64)
+def test_preview_leaves_small_text_untouched() -> None:
+    text, was_truncated = decode_preview(b"hello", max_bytes=64)
     assert text == "hello"
     assert was_truncated is False
 
 
-def test_truncate_caps_to_byte_budget() -> None:
-    text, was_truncated = truncate_text("x" * 1000, max_bytes=10)
+def test_preview_caps_to_byte_budget() -> None:
+    text, was_truncated = decode_preview(b"x" * 1000, max_bytes=10)
     assert was_truncated is True
     assert len(text.encode("utf-8")) <= 10
 
 
-def test_truncate_measures_bytes_not_characters() -> None:
+def test_preview_measures_bytes_not_characters() -> None:
     # "é" is two UTF-8 bytes, so a 3-byte budget fits only one character.
-    text, was_truncated = truncate_text("ééé", max_bytes=3)
+    text, was_truncated = decode_preview("ééé".encode(), max_bytes=3)
     assert was_truncated is True
     assert len(text.encode("utf-8")) <= 3
+
+
+def test_preview_does_not_decode_past_the_budget() -> None:
+    # The point of the whole change: a huge body must not become a huge str.
+    text, _ = decode_preview(b"x" * 10_000_000, max_bytes=8)
+    assert text == "xxxxxxxx"
 
 
 # --- RingBufferStore -------------------------------------------------------
