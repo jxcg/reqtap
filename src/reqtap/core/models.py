@@ -1,16 +1,24 @@
 """What one captured request looks like, plus helpers to trim bodies safely."""
 
+import codecs
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-def truncate_text(text: str, max_bytes: int) -> tuple[str, bool]:
-    """Trim ``text`` to ``max_bytes`` UTF-8 bytes. Returns (text, was_trimmed)."""
-    encoded = text.encode("utf-8", errors="replace")
-    if len(encoded) <= max_bytes:
-        return text, False
-    # Byte slice can split a multibyte char; ignore the dangling fragment.
-    return encoded[:max_bytes].decode("utf-8", errors="ignore"), True
+def decode_preview(
+    raw: bytes, max_bytes: int, errors: str = "replace"
+) -> tuple[str, bool]:
+    """Decode at most ``max_bytes`` of ``raw``. Returns (text, was_trimmed).
+
+    Slices before decoding, so a 256 MiB body never becomes a 256 MiB str.
+    The incremental decoder holds back a character the slice cut in half
+    instead of reporting it as invalid, which matters for ``errors="strict"``.
+    """
+    was_trimmed = len(raw) > max_bytes
+    decoder = codecs.getincrementaldecoder("utf-8")(errors)
+    # final only when nothing was sliced off: an incomplete sequence is then a
+    # genuinely bad byte, not a character the cut split in half.
+    return decoder.decode(raw[:max_bytes], final=not was_trimmed), was_trimmed
 
 
 @dataclass
@@ -34,12 +42,17 @@ class CapturedRequest:
     request_headers: dict[str, str] = field(default_factory=dict)
     request_body: str = ""
     request_body_truncated: bool = False
+    # Whole body on the wire, so a preview says how much it is a preview of.
+    # Bytes, while the preview above is characters — the two differ on any
+    # non-ASCII body, so never derive truncation by comparing them.
+    request_body_total_bytes: int | None = None
 
     # Response
     status: int | None = None
     response_headers: dict[str, str] = field(default_factory=dict)
     response_body: str = ""
     response_body_truncated: bool = False
+    response_body_total_bytes: int | None = None
 
     # Error (only set if the handler raised)
     traceback: str | None = None

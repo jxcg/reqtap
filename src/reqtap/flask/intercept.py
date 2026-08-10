@@ -9,11 +9,10 @@ import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from io import BytesIO
 
 from flask import Flask, Response, g, request
 
-from reqtap.core.models import CapturedRequest, truncate_text
+from reqtap.core.models import CapturedRequest, decode_preview
 from reqtap.core.store import RingBufferStore
 from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
@@ -21,6 +20,10 @@ logger = logging.getLogger("reqtap")
 
 # Placeholder shown instead of a redacted header value.
 REDACTED = "<redacted>"
+
+# Longest header value kept. Comfortably fits a session cookie or a JWT; the
+# ceiling that matters is 100 headers x 200 records, not any single value.
+MAX_HEADER_CHARS = 1024
 
 # Per-request scratch keys on flask.g.
 _RECORD_KEY = "_reqtap_record"
@@ -31,7 +34,7 @@ def install(
     app: Flask,
     *,
     store: RingBufferStore,
-    max_body_bytes: int,
+    body_preview_bytes: int,
     redact_headers: set[str],
 ) -> None:
     """Register capture hooks on ``app``. Called once at startup."""
@@ -43,10 +46,9 @@ def install(
             return
 
         try:
-            # Include request capture, just as the end time includes response capture.
             now = datetime.now(UTC)
             start = time.perf_counter()
-            body, truncated = _capture_request_body(max_body_bytes)
+            # Body is captured in teardown, once the handler no longer needs it.
             record = CapturedRequest(
                 # Same instant, two formats.
                 timestamp=now.timestamp(),
@@ -56,8 +58,6 @@ def install(
                 query_string=request.query_string.decode("utf-8", errors="replace"),
                 remote_addr=request.remote_addr,
                 request_headers=_redact(request.headers.items(), redact_headers),
-                request_body=body,
-                request_body_truncated=truncated,
             )
         except Exception:
             # No record on g means the later hooks quietly do nothing.
@@ -82,10 +82,10 @@ def install(
         try:
             record.status = response.status_code
             record.response_headers = _redact(response.headers.items(), redact_headers)
-            body, truncated = _capture_response_body(response, max_body_bytes)
+            body, truncated = _capture_response_body(response, body_preview_bytes)
             record.response_body = body
             record.response_body_truncated = truncated
-            record.duration_ms = _elapsed_ms()
+            record.response_body_total_bytes = response.content_length
         except Exception:
             logger.warning("reqtap could not capture this response", exc_info=True)
 
@@ -98,7 +98,19 @@ def install(
         if record is None:
             return
 
+        # Own try: a body we cannot read must not cost us the whole record.
         try:
+            record.request_body_total_bytes = request.content_length
+            record.request_body, record.request_body_truncated = (
+                _capture_request_body(body_preview_bytes)
+            )
+        except Exception:
+            record.request_body = "<skipped: capture failed>"
+            logger.warning("reqtap could not capture this request body", exc_info=True)
+
+        try:
+            # Last thing measured, so it covers both body captures symmetrically.
+            record.duration_ms = _elapsed_ms()
             if exc is not None:
                 record.traceback = "".join(
                     traceback_module.format_exception(type(exc), exc, exc.__traceback__)
@@ -106,32 +118,36 @@ def install(
                 # Handler raised, so after_request never ran. Patch in what we can.
                 if record.status is None:
                     record.status = 500
-                if record.duration_ms is None:
-                    record.duration_ms = _elapsed_ms()
 
             store.add(record)
         except Exception:
             logger.warning("reqtap could not store this record", exc_info=True)
 
 
-def _capture_request_body(max_body_bytes: int) -> tuple[str, bool]:
-    """Read and truncate the request body.
+def _capture_request_body(body_preview_bytes: int) -> tuple[str, bool]:
+    """Preview the request body without buffering more than we keep.
 
+    Runs after the handler, so the body is either already in werkzeug's cache
+    (free to reuse) or nobody wanted it (safe to drain).
     Skips multipart uploads (don't buffer files into memory for no reason).
     """
     if (request.content_type or "").startswith("multipart/form-data"):
         return "<skipped: multipart upload>", False
 
-    raw = request.get_data(cache=True)
-    # get_data() drains the one-shot WSGI body. Werkzeug's cache covers
-    # get_data/form/json but not request.stream, so rewind it for raw readers.
-    request.stream = BytesIO(raw)
-    text = raw.decode("utf-8", errors="replace")
-    return truncate_text(text, max_body_bytes)
+    # get_data/form/json leave the body cached; reusing it costs nothing.
+    # Otherwise read only what we intend to store, plus one byte to detect more.
+    cached = getattr(request, "_cached_data", None)
+    raw = cached if cached is not None else request.stream.read(body_preview_bytes + 1)
+
+    if not raw and request.content_length:
+        # Handler read request.stream directly, which werkzeug does not cache.
+        return "<skipped: body consumed by handler>", False
+
+    return decode_preview(raw, body_preview_bytes)
 
 
-def _capture_response_body(response: Response, max_body_bytes: int) -> tuple[str, bool]:
-    """Read and truncate the response body, or say why we left it alone.
+def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple[str, bool]:
+    """Preview the response body, or say why we left it alone.
 
     A body is skipped when reading it would destroy it, or when it isn't text.
     """
@@ -142,12 +158,11 @@ def _capture_response_body(response: Response, max_body_bytes: int) -> tuple[str
 
     raw = response.get_data()
     try:
-        text = raw.decode("utf-8")
+        # Strict: a decode failure here means binary, and errors="replace"
+        # would store a screenful of U+FFFD instead of saying so.
+        return decode_preview(raw, body_preview_bytes, errors="strict")
     except UnicodeDecodeError:
-        # errors="replace" would store a screenful of U+FFFD instead.
         return f"<skipped: binary response, {len(raw)} bytes>", False
-
-    return truncate_text(text, max_body_bytes)
 
 
 def _redact(
@@ -155,9 +170,20 @@ def _redact(
 ) -> dict[str, str]:
     """Copy headers to a dict, masking anything on the redact list."""
     return {
-        key: (REDACTED if key.lower() in redact_headers else value)
+        key: (REDACTED if key.lower() in redact_headers else _trim_header(value))
         for key, value in header_items
     }
+
+
+def _trim_header(value: str) -> str:
+    """Cap one header value, saying how much was dropped.
+
+    A server allows ~100 headers of up to 64 KB each, so uncapped values let a
+    padded request pin megabytes in the buffer while its body stays tiny.
+    """
+    if len(value) <= MAX_HEADER_CHARS:
+        return value
+    return f"{value[:MAX_HEADER_CHARS]}… (+{len(value) - MAX_HEADER_CHARS} chars)"
 
 
 def _elapsed_ms() -> float:
