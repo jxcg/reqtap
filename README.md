@@ -27,17 +27,21 @@ Run your app as normal. Requests/responses are captured in memory only, precisel
 
 ### Dashboard
 
-Once active, reqtap mounts a dashboard at **`/_reqtap/`**. Open it from the same machine to watch traffic live. The dashboard and API only accept loopback clients, never cache their responses, and never capture their own traffic. Do not publish the dashboard through a reverse proxy: proxied clients may appear to reqtap as the proxy's loopback address.
+Once active, reqtap mounts a dashboard at **`/_reqtap/`** (or the shorter **`/_rq/`**). Open it from the same machine to see captured requests newest first — time, method, path, status, duration. 4xx shows amber; 5xx and unhandled exceptions show red. Reload the page to see new requests.
+
+The dashboard and API only accept loopback clients, never cache their responses, and never capture their own traffic. The page runs no JavaScript and is served with `Content-Security-Policy: default-src 'none'`, so captured data cannot be executed or exfiltrated by anything that reaches it. Do not publish the dashboard through a reverse proxy: proxied clients may appear to reqtap as the proxy's loopback address.
+
+For full headers, bodies and tracebacks, use the JSON API below.
 
 ### JSON API
 
-The dashboard is a thin client over a small JSON API, all under the `/_reqtap` prefix. You can hit these directly (e.g. to script against captured traffic):
+A small JSON API sits alongside the dashboard under the same `/_reqtap` prefix. The dashboard renders server-side and does not use it, so these are yours to script against:
 
 | Method   | Path                          | Description                                                                                     |
 | -------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
 | `GET`    | `/_reqtap/api/requests`       | Captured requests as lightweight summaries, newest first. Pass `?since=<id>` to get only records newer than an id you already hold (incremental polling). |
 | `GET`    | `/_reqtap/api/requests/<id>`  | Full detail for one captured request. `404` once it has been evicted from the ring buffer.      |
-| `DELETE` | `/_reqtap/api/requests`       | Clear the buffer, the dashboard's "clear feed" action.                                           |
+| `DELETE` | `/_reqtap/api/requests`       | Clear the buffer.                                                                                |
 
 Responses are `application/json`. The buffer is in-memory and bounded (`buffer_size`, default 200), so old records are evicted as new ones arrive.
 

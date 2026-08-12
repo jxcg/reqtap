@@ -12,6 +12,7 @@ from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
     DEFAULT_REDACT_HEADERS,
+    REQTAP_FEEDBACK_MESSAGE_WARN,
 )
 from reqtap.core.safety import is_active
 from reqtap.core.store import RingBufferStore
@@ -102,7 +103,4 @@ class ReqTap:
         app.register_blueprint(
             blueprint, name="reqtap_short", url_prefix=DASHBOARD_PREFIX_SHORT
         )
-        logger.warning(
-            "reqtap is ACTIVE: recording request/response bodies, headers, and "
-            "tracebacks in memory! Never enable in production!"
-        )
+        logger.warning(REQTAP_FEEDBACK_MESSAGE_WARN)
