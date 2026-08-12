@@ -135,6 +135,22 @@ def test_sensitive_headers_are_redacted() -> None:
     assert "secret-token" not in str(record.request_headers)
 
 
+def test_response_cookies_are_redacted() -> None:
+    """Set-Cookie carries the session being issued, so it must not be stored raw."""
+    app, tap = build_app()
+
+    @app.get("/login")
+    def login() -> Response:
+        response = Response("ok")
+        response.set_cookie("session", "secret-token")
+        return response
+
+    app.test_client().get("/login")
+
+    record = tap.store.list()[0]
+    assert "secret-token" not in str(record.response_headers)
+
+
 def test_large_body_is_truncated() -> None:
     app, tap = build_app(body_preview_bytes=10)
     app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
@@ -168,7 +184,7 @@ def test_warns_when_live(caplog: pytest.LogCaptureFixture) -> None:
     # sensitive request data is being recorded.
     with caplog.at_level(logging.WARNING, logger="reqtap"):
         build_app()
-    assert "reqtap is LIVE" in caplog.text
+    assert "reqtap is ACTIVE" in caplog.text
     assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
@@ -179,8 +195,7 @@ def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:
     assert caplog.records == []
 
 
-# Capture runs after the handler now, so these pin that reqtap stays out of the
-# way of every way a handler can read the body.
+# Request capture must stay out of the way of every supported body-reading path.
 
 
 def build_body_reader_app(read_body: Any) -> tuple[Flask, ReqTap]:
@@ -208,7 +223,7 @@ def test_handler_can_still_read_raw_stream() -> None:
 
 
 def test_form_and_json_parsing_still_work() -> None:
-    # Cached path, not request.stream — guard against a fix that breaks it.
+    # Exercise framework-cached readers separately from direct stream access.
     form_app, _ = build_body_reader_app(lambda: dict(request.form))
     assert form_app.test_client().post("/read", data={"a": "1"}).get_data(
         as_text=True

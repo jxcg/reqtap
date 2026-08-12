@@ -1,16 +1,11 @@
-"""body_preview_bytes must bound what reqtap allocates, not just what it stores.
-
-Regression test for the old behaviour: reqtap read the whole body, decoded it,
-then kept 8 bytes — a 4 MiB upload peaked at 12 MiB. Capture now runs after the
-handler and reads only what it keeps.
-"""
+"""Memory use must stay bounded by the configured request preview size."""
 
 import tracemalloc
 
 from flask import Flask
 
 from reqtap import ReqTap
-from reqtap.flask import intercept
+from reqtap.core.constants import MAX_HEADER_CHARS
 
 MIB = 1024 * 1024
 BODY_MIB = 4
@@ -49,12 +44,12 @@ def test_big_body_does_not_blow_up_memory() -> None:
 
     assert record.request_body == "a" * PREVIEW
     assert record.request_body_total_bytes == BODY_MIB * MIB  # preview says what it previews
-    # 1 MiB is generous: the fix lands near zero, the old bug landed at 12 MiB.
+    # Allow runtime overhead while keeping capture far below the 4 MiB body size.
     assert peak_mib < 1.0, f"reqtap buffered the body: {peak_mib:.2f} MiB"
 
 
 def test_padded_headers_do_not_fill_the_buffer() -> None:
-    """A tiny body with 97 junk headers used to cost ~6 MB per record."""
+    """Header limits keep a padded request from pinning megabytes in the buffer."""
     app = Flask(__name__)
 
     @app.get("/ping")
@@ -69,6 +64,6 @@ def test_padded_headers_do_not_fill_the_buffer() -> None:
     stored = sum(len(value) for value in record.request_headers.values())
     print(f"\n97 headers x 60,000 chars sent -> {stored:,} chars stored")
 
-    assert record.request_headers["X-Pad-0"].startswith("a" * intercept.MAX_HEADER_CHARS)
+    assert record.request_headers["X-Pad-0"].startswith("a" * MAX_HEADER_CHARS)
     assert "+58976 chars" in record.request_headers["X-Pad-0"]  # says what was dropped
     assert stored < 200_000, f"headers still uncapped: {stored:,} chars"

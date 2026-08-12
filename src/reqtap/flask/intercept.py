@@ -12,22 +12,18 @@ from datetime import UTC, datetime
 
 from flask import Flask, Response, g, request
 
+from reqtap.core.constants import (
+    DASHBOARD_PREFIX_LONG,
+    DASHBOARD_PREFIX_SHORT,
+    MAX_HEADER_CHARS,
+    RECORD_KEY,
+    REDACTED,
+    START_KEY,
+)
 from reqtap.core.models import CapturedRequest, decode_preview
 from reqtap.core.store import RingBufferStore
-from reqtap.flask.dashboard import DASHBOARD_PREFIX
 
 logger = logging.getLogger("reqtap")
-
-# Placeholder shown instead of a redacted header value.
-REDACTED = "<redacted>"
-
-# Longest header value kept. Comfortably fits a session cookie or a JWT; the
-# ceiling that matters is 100 headers x 200 records, not any single value.
-MAX_HEADER_CHARS = 1024
-
-# Per-request scratch keys on flask.g.
-_RECORD_KEY = "_reqtap_record"
-_START_KEY = "_reqtap_perf_start"
 
 
 def install(
@@ -42,7 +38,7 @@ def install(
     @app.before_request
     def _begin() -> None:
         """Grab request fields before the route handler runs."""
-        if request.path.startswith(DASHBOARD_PREFIX):
+        if request.path.startswith((DASHBOARD_PREFIX_LONG, DASHBOARD_PREFIX_SHORT)):
             return
 
         try:
@@ -65,8 +61,8 @@ def install(
             return
 
         # Stash on g so later hooks can find this record.
-        setattr(g, _RECORD_KEY, record)
-        setattr(g, _START_KEY, start)
+        setattr(g, RECORD_KEY, record)
+        setattr(g, START_KEY, start)
 
     @app.after_request
     def _complete(response: Response) -> Response:
@@ -75,7 +71,7 @@ def install(
         Sits in the response path of every request: failing to record must
         never become failing to serve.
         """
-        record = getattr(g, _RECORD_KEY, None)
+        record = getattr(g, RECORD_KEY, None)
         if record is None:
             return response
 
@@ -94,7 +90,7 @@ def install(
     @app.teardown_request
     def _finalize(exc: BaseException | None) -> None:
         """Save the record. Runs even when the handler raised."""
-        record = getattr(g, _RECORD_KEY, None)
+        record = getattr(g, RECORD_KEY, None)
         if record is None:
             return
 
@@ -188,5 +184,5 @@ def _trim_header(value: str) -> str:
 
 def _elapsed_ms() -> float:
     """How long this request took, in milliseconds."""
-    start: float = getattr(g, _START_KEY, time.perf_counter())
+    start: float = getattr(g, START_KEY, time.perf_counter())
     return (time.perf_counter() - start) * 1000

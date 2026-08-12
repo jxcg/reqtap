@@ -7,18 +7,12 @@ The interceptor ignores this path, so the dashboard never captures itself.
 
 import json
 from ipaddress import IPv6Address, ip_address
-from pathlib import Path
 from typing import Any
 
 from flask import Blueprint, Response, abort, request, send_from_directory
 
+from reqtap.core.constants import UI_DIRECTORY
 from reqtap.core.store import RingBufferStore
-
-#: Dashboard mount path. Intercept layer imports this to skip self-traffic.
-DASHBOARD_PREFIX = "/_reqtap"
-
-#: Bundled HTML lives in the package. Works from source tree or installed wheel.
-_UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
 
 
 def create_blueprint(store: RingBufferStore) -> Blueprint:
@@ -29,7 +23,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
     blueprint = Blueprint(
         "reqtap",
         __name__,
-        static_folder=str(_UI_DIRECTORY),
+        static_folder=str(UI_DIRECTORY),
         static_url_path="/static",
     )
 
@@ -48,7 +42,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
     @blueprint.get("/")
     def index() -> Response:
         """Serve the dashboard shell."""
-        return send_from_directory(_UI_DIRECTORY, "index.html")
+        return send_from_directory(UI_DIRECTORY, "index.html")
 
     @blueprint.get("/api/requests")
     def list_requests() -> Response:
