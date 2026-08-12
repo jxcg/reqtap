@@ -131,8 +131,26 @@ def test_sensitive_headers_are_redacted() -> None:
     app.test_client().get("/hello", headers={"Authorization": "Bearer secret-token"})
 
     record = tap.store.list()[0]
-    assert record.request_headers["Authorization"] == "<redacted>"
+    assert ("Authorization", "<redacted>") in record.request_headers
     assert "secret-token" not in str(record.request_headers)
+
+
+def test_repeated_headers_are_all_captured() -> None:
+    """Guards the pair shape: the dict this replaced kept only the last cookie."""
+    app, tap = build_app()
+
+    @app.get("/multi")
+    def multi() -> Response:
+        response = Response("ok")
+        for name in ("first", "second", "third"):
+            response.headers.add("Set-Cookie", f"{name}=x; Path=/")
+        return response
+
+    app.test_client().get("/multi")
+
+    record = tap.store.list()[0]
+    cookies = [value for name, value in record.response_headers if name == "Set-Cookie"]
+    assert len(cookies) == 3
 
 
 def test_response_cookies_are_redacted() -> None:

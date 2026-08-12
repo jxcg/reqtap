@@ -163,12 +163,12 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
 
 def _redact(
     header_items: Iterable[tuple[str, str]], redact_headers: set[str]
-) -> dict[str, str]:
-    """Copy headers to a dict, masking anything on the redact list."""
-    return {
-        key: (REDACTED if key.lower() in redact_headers else _trim_header(value))
+) -> list[tuple[str, str]]:
+    """Copy headers as pairs, masking anything on the redact list."""
+    return [
+        (key, REDACTED if key.lower() in redact_headers else _trim_header(value))
         for key, value in header_items
-    }
+    ]
 
 
 def _trim_header(value: str) -> str:

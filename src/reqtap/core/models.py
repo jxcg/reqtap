@@ -39,7 +39,9 @@ class CapturedRequest:
     path: str = ""
     query_string: str = ""
     remote_addr: str | None = None
-    request_headers: dict[str, str] = field(default_factory=dict)
+    # Pairs, not a dict: HTTP allows a name to repeat (Set-Cookie, Vary, Link)
+    # and a dict would keep only the last one.
+    request_headers: list[tuple[str, str]] = field(default_factory=list)
     request_body: str = ""
     request_body_truncated: bool = False
     # Whole body on the wire, so a preview says how much it is a preview of.
@@ -49,7 +51,7 @@ class CapturedRequest:
 
     # Response
     status: int | None = None
-    response_headers: dict[str, str] = field(default_factory=dict)
+    response_headers: list[tuple[str, str]] = field(default_factory=list)
     response_body: str = ""
     response_body_truncated: bool = False
     response_body_total_bytes: int | None = None
