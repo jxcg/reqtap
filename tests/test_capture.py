@@ -14,6 +14,7 @@ import pytest
 from flask import Flask, Response, jsonify, request
 
 from reqtap import ReqTap
+from reqtap.core.constants import REQTAP_CONTENT_FACING_MESSAGE_REDACTED
 from reqtap.flask import intercept
 
 
@@ -131,12 +132,12 @@ def test_sensitive_headers_are_redacted() -> None:
     app.test_client().get("/hello", headers={"Authorization": "Bearer secret-token"})
 
     record = tap.store.list()[0]
-    assert ("Authorization", "<redacted>") in record.request_headers
+    assert ("Authorization", REQTAP_CONTENT_FACING_MESSAGE_REDACTED) in record.request_headers
     assert "secret-token" not in str(record.request_headers)
 
 
 def test_repeated_headers_are_all_captured() -> None:
-    """Guards the pair shape: the dict this replaced kept only the last cookie."""
+    """Every repeated name must survive; Set-Cookie is the one that carries secrets."""
     app, tap = build_app()
 
     @app.get("/multi")
@@ -227,7 +228,9 @@ def test_warns_when_live(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="reqtap"):
         build_app()
     assert "reqtap is ACTIVE" in caplog.text
-    assert any(record.levelname == "WARNING" for record in caplog.records)
+    warning = next(record for record in caplog.records if record.levelname == "WARNING")
+    assert "REQTAP WARNING" in warning.getMessage()
+    assert warning.getMessage().count("!") >= 20
 
 
 def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:

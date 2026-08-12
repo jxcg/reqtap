@@ -9,10 +9,19 @@ import json
 from ipaddress import IPv6Address, ip_address
 from typing import Any
 
-from flask import Blueprint, Response, abort, request, send_from_directory
+import jinja2
+from flask import Blueprint, Response, abort, request
 
+from reqtap import __version__
 from reqtap.core.constants import UI_DIRECTORY
 from reqtap.core.store import RingBufferStore
+
+# reqtap's own environment, never the host app's: flask.render_template would
+# apply the inspected app's autoescape settings to a page full of its own data.
+_JINJA = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(str(UI_DIRECTORY)),
+    autoescape=True,
+)
 
 
 def create_blueprint(store: RingBufferStore) -> Blueprint:
@@ -34,19 +43,31 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
             abort(403)
 
     @blueprint.after_request
-    def prevent_caching(response: Response) -> Response:
-        """Captured bodies, headers, and tracebacks must never be cached."""
+    def security_headers(response: Response) -> Response:
+        """Captured data must not be cached, and nothing here may execute.
+
+        ``style-src 'unsafe-inline'`` covers the page's inline ``<style>``;
+        ``default-src 'none'`` denies scripts, images, fonts and connections,
+        so an injection that survives autoescape has nothing to run.
+        """
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'"
+        )
         return response
 
     @blueprint.get("/")
     def index() -> Response:
-        """Serve the dashboard shell."""
-        return send_from_directory(UI_DIRECTORY, "index.html")
+        """Render the dashboard, 
+        feed follows newest first."""
+        page = _JINJA.get_template("feed.html.j2").render(
+            records=list(reversed(store.list())), version=__version__
+        )
+        return Response(page, mimetype="text/html")
 
     @blueprint.get("/api/requests")
     def list_requests() -> Response:
-        """Lightweight list for the live feed, newest first.
+        """Lightweight summaries, newest first.
 
         Pass ``?since=<id>`` to fetch only records newer than that id.
         """
@@ -71,7 +92,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
     @blueprint.delete("/api/requests")
     def clear_requests() -> Response:
-        """Clear the buffer ("clear feed" in the UI)."""
+        """Clear the buffer."""
         store.clear()
         return _json_response({"cleared": True})
 

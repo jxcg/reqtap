@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>reqtap</title>
+    <style>
+      body {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 13px;
+        padding: 1.5rem;
+        color-scheme: light dark;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.35rem 0.75rem 0.35rem 0;
+        border-bottom: 1px solid #d4d4d8;
+        white-space: nowrap;
+      }
+      /* Only the path may wrap; everything else is short and fixed. */
+      .path {
+        white-space: normal;
+        width: 100%;
+        word-break: break-all;
+      }
+      .warn {
+        color: #b45309;
+      }
+      .error {
+        color: #b91c1c;
+      }
+      code {
+        font-size: 0.44em;
+        font-weight: 400;
+        padding: 4px;
+        border-radius: 4px;
+        background: #c4c4c4;
+        color: #f4f4f4;
+      }
+
+      code-canary {
+        font-size: 0.44em;
+        font-weight: 400;
+        padding: 4px;
+        border-radius: 4px;
+        background: #ff4444;
+        color: #f4f4f4;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>reqtap <code>{{ version }}</code></h1>
+    <table>
+      <tr>
+        <th>time</th>
+        <th>method</th>
+        <th class="path">path</th>
+        <th>status</th>
+        <th>ms</th>
+      </tr>
+      {% for record in records %}
+      <tr>
+        <td>{{ record.timestamp_utc[11:23] }}</td>
+        <td>{{ record.method }}</td>
+        <td class="path">{{ record.path }}</td>
+        <td class="{{ record.status_class }}">{{ record.status or "—" }}</td>
+        <td>{{ "%.1f"|format(record.duration_ms) if record.duration_ms else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>

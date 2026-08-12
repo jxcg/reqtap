@@ -64,7 +64,7 @@ class CapturedRequest:
         return asdict(self)
 
     def to_summary(self) -> dict[str, Any]:
-        """Light row for the live feed. No bodies or headers."""
+        """Light row for the JSON API. No bodies or headers."""
         return {
             "id": self.id,
             "timestamp": self.timestamp,
@@ -75,3 +75,14 @@ class CapturedRequest:
             "status": self.status,
             "errored": self.traceback is not None,
         }
+
+    @property
+    def status_class(self) -> str:
+        """CSS class for the status cell.
+
+        A handler that raised is an error even when the status says otherwise.
+        """
+        status = self.status or 0
+        if self.traceback is not None or status >= 500:
+            return "error"
+        return "warn" if status >= 400 else ""

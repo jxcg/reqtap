@@ -6,6 +6,21 @@ from pathlib import Path
 DASHBOARD_PREFIX_LONG = "/_reqtap"
 DASHBOARD_PREFIX_SHORT = "/_rq"
 
+
+
+# User-facing informational feedback messages
+# The warning message displayed when reqtap is active.
+REQTAP_FEEDBACK_MESSAGE_WARN = (
+    "\n"
+    "!!!!!!!!!!!!!!!!!!!!!!!! REQTAP WARNING !!!!!!!!!!!!!!!!!!!!!!!!\n"
+    "[reqtap] reqtap is ACTIVE: recording request/response bodies, headers, and\n"
+    "tracebacks in memory! NEVER ENABLE IN PRODUCTION!\n"
+    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+)
+
+# User-facing informational content messages
+REQTAP_CONTENT_FACING_MESSAGE_REDACTED = "<redacted by reqtap>"
+
 # Relative to this file, so constants.py must stay one level under reqtap/.
 UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
 
@@ -22,8 +37,6 @@ DEFAULT_REDACT_HEADERS = [
     "X-Csrf-Token",
     "X-Xsrf-Token",
 ]
-
-REDACTED = "<redacted>"
 
 # Comfortably fits a session cookie or a JWT; the ceiling that matters is
 # 100 headers x 200 records, not any single value.

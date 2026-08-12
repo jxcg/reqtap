@@ -17,7 +17,7 @@ from reqtap.core.constants import (
     DASHBOARD_PREFIX_SHORT,
     MAX_HEADER_CHARS,
     RECORD_KEY,
-    REDACTED,
+    REQTAP_CONTENT_FACING_MESSAGE_REDACTED,
     START_KEY,
 )
 from reqtap.core.models import CapturedRequest, decode_preview
@@ -166,7 +166,12 @@ def _redact(
 ) -> list[tuple[str, str]]:
     """Copy headers as pairs, masking anything on the redact list."""
     return [
-        (key, REDACTED if key.lower() in redact_headers else _trim_header(value))
+        (
+            key,
+            REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+            if key.lower() in redact_headers
+            else _trim_header(value),
+        )
         for key, value in header_items
     ]
 

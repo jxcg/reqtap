@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Files that are not Python modules, so nothing imports them and no test
 # notices when packaging drops them. The dashboard 500s without this one.
-REQUIRED_MEMBERS = ["reqtap/dashboard/index.html"]
+REQUIRED_MEMBERS = ["reqtap/dashboard/feed.html.j2"]
 
 
 def find_wheel(dist_directory: Path) -> Path:
