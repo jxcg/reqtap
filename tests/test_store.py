@@ -37,7 +37,7 @@ def test_preview_measures_bytes_not_characters() -> None:
 
 
 def test_preview_does_not_decode_past_the_budget() -> None:
-    # The point of the whole change: a huge body must not become a huge str.
+    # A huge byte sequence must not become a huge string before it is trimmed.
     text, _ = decode_preview(b"x" * 10_000_000, max_bytes=8)
     assert text == "xxxxxxxx"
 

@@ -56,6 +56,15 @@ def test_gate_allows_local_and_refuses_remote() -> None:
     assert client.get("/_reqtap/api/requests", environ_overrides=REMOTE_CLIENT).status_code == 403
 
 
+def test_short_prefix_mirrors_the_long_one() -> None:
+    """``/_rq`` is a shorter alias for the same dashboard, not a separate one."""
+    app, _ = build_app()
+    client = app.test_client()
+
+    assert client.get("/_rq/api/requests").status_code == 200
+    assert client.get("/_rq/api/requests", environ_overrides=REMOTE_CLIENT).status_code == 403
+
+
 def test_remote_traffic_is_still_captured() -> None:
     """The gate restricts viewing, not recording: traffic from anywhere is kept."""
     app, tap = build_app()

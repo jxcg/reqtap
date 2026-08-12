@@ -1,20 +1,24 @@
 """One-line entry point: ``ReqTap(app, live_reqtap_requests=True)``.
 
-Does nothing unless the safety gate passes. When live, mounts ``/_reqtap/``.
+Does nothing unless the safety gate passes. When live, mounts the dashboard
+at both ``/_reqtap/`` and the shorter ``/_rq/``.
 """
 
 import logging
 
 from flask import Flask
 
+from reqtap.core.constants import (
+    DASHBOARD_PREFIX_LONG,
+    DASHBOARD_PREFIX_SHORT,
+    DEFAULT_REDACT_HEADERS,
+)
 from reqtap.core.safety import is_active
 from reqtap.core.store import RingBufferStore
 from reqtap.flask import intercept
-from reqtap.flask.dashboard import DASHBOARD_PREFIX, create_blueprint
+from reqtap.flask.dashboard import create_blueprint
 
 logger = logging.getLogger("reqtap")
-
-DEFAULT_REDACT_HEADERS = ["Authorization", "Cookie"]
 
 
 class ReqTap:
@@ -65,11 +69,14 @@ class ReqTap:
             body_preview_bytes=self.body_preview_bytes,
             redact_headers=self._redact_headers,
         )
-        # Mount dashboard + API. Without this, /_reqtap 404s even though capture works.
+        # Mount dashboard + API under both the full and short prefix. Without
+        # this, /_reqtap and /_rq 404 even though capture works.
+        blueprint = create_blueprint(self.store)
+        app.register_blueprint(blueprint, url_prefix=DASHBOARD_PREFIX_LONG)
         app.register_blueprint(
-            create_blueprint(self.store), url_prefix=DASHBOARD_PREFIX
+            blueprint, name="reqtap_short", url_prefix=DASHBOARD_PREFIX_SHORT
         )
         logger.warning(
-            "reqtap is LIVE: recording request/response bodies, headers, and "
-            "tracebacks in memory. Do not enable in production."
+            "reqtap is ACTIVE: recording request/response bodies, headers, and "
+            "tracebacks in memory! Never enable in production!"
         )

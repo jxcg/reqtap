@@ -1,4 +1,4 @@
-"""reqtap: a dev-time wiretap for your web app's HTTP traffic.
+"""reqtap: a dev-time wiretap for web app HTTP traffic.
 
 Add one line to Flask, hit your routes, then peek at what went in and out
 (headers, bodies, status, errors) at ``/_reqtap/`` or the JSON API below it.

@@ -31,7 +31,4 @@ dist/
 
 # Author Misc
 plans/
-plan.md
-BOARD.md
-_DEMO_EXAMPLES
-guide.md
+.claude/
