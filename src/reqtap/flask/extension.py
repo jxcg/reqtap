@@ -6,7 +6,7 @@ at both ``/_reqtap/`` and the shorter ``/_rq/``.
 
 import logging
 
-from flask import Flask
+from flask import Flask, current_app, has_app_context
 
 from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
@@ -46,32 +46,58 @@ class ReqTap:
         self._redact_headers = {
             name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
         }
-        # None means reqtap is off. Handy to check in tests.
-        self.store: RingBufferStore | None = None
+        # One store per app, not one per extension: init_app may be called for
+        # several apps and each needs its own buffer.
+        self._apps: list[Flask] = []
 
+        # Hook reqtap into app
         if app is not None:
             self.init_app(app)
+
+    @property
+    def store(self) -> RingBufferStore | None:
+        """The buffer for the app in play, or ``None`` when reqtap is off.
+
+        Resolves through the app context when there is one, so the store always
+        matches the app currently handling the request.
+        """
+        if has_app_context():
+            in_context: RingBufferStore | None = current_app.extensions.get("reqtap")
+            return in_context
+        if not self._apps:
+            return None
+        if len(self._apps) > 1:
+            raise RuntimeError(
+                "ReqTap is installed on several apps, so tap.store is ambiguous here. "
+                "Read it inside an app context, or use app.extensions['reqtap']."
+            )
+        only_app: RingBufferStore = self._apps[0].extensions["reqtap"]
+        return only_app
 
     def init_app(self, app: Flask) -> None:
         """Hook reqtap into ``app`` if activated.
 
-        Inactive: registers nothing, stays silent.
+        Inactive: registers nothing; silent.
         Active: logs a warning so you know sensitive data is being recorded.
         """
 
         if not is_active(self.live_reqtap_requests):
             return
 
-        self.store = RingBufferStore(capacity=self.buffer_size)
+        store = RingBufferStore(capacity=self.buffer_size)
+        # app.extensions is the store's home, so two apps cannot share one buffer.
+        app.extensions["reqtap"] = store
+        self._apps.append(app)
+
         intercept.install(
             app,
-            store=self.store,
+            store=store,
             body_preview_bytes=self.body_preview_bytes,
             redact_headers=self._redact_headers,
         )
         # Mount dashboard + API under both the full and short prefix. Without
         # this, /_reqtap and /_rq 404 even though capture works.
-        blueprint = create_blueprint(self.store)
+        blueprint = create_blueprint(store)
         app.register_blueprint(blueprint, url_prefix=DASHBOARD_PREFIX_LONG)
         app.register_blueprint(
             blueprint, name="reqtap_short", url_prefix=DASHBOARD_PREFIX_SHORT

@@ -185,6 +185,30 @@ def test_dashboard_traffic_is_not_captured() -> None:
     assert tap.store.list() == []
 
 
+def test_app_factory_keeps_one_store_per_app() -> None:
+    """One extension, two apps: each keeps its own buffer instead of the last one winning."""
+    tap = ReqTap(live_reqtap_requests=True)
+    first, second = Flask("first"), Flask("second")
+
+    for app in (first, second):
+
+        @app.get("/ping")
+        def ping() -> str:
+            return "ok"
+
+        tap.init_app(app)
+
+    first.test_client().get("/ping")
+
+    assert len(first.extensions["reqtap"].list()) == 1
+    assert second.extensions["reqtap"].list() == []
+    # tap.store cannot guess which app is meant outside a request.
+    with pytest.raises(RuntimeError, match="several apps"):
+        _ = tap.store
+    with second.app_context():
+        assert tap.store is second.extensions["reqtap"]
+
+
 def test_inactive_captures_nothing() -> None:
     app = Flask(__name__)
 
