@@ -1,8 +1,4 @@
-"""Every hard-coded value reqtap depends on, in one place.
-
-Kept here so a value can be found and changed without hunting through the
-adapter modules that use it.
-"""
+"""In module values that reqtap depends on, in one place."""
 
 from pathlib import Path
 

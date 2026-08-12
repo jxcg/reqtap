@@ -61,9 +61,10 @@ def test_padded_headers_do_not_fill_the_buffer() -> None:
     app.test_client().get("/ping", headers=junk)
 
     record = tap.store.list()[-1]
-    stored = sum(len(value) for value in record.request_headers.values())
+    stored = sum(len(value) for _, value in record.request_headers)
     print(f"\n97 headers x 60,000 chars sent -> {stored:,} chars stored")
 
-    assert record.request_headers["X-Pad-0"].startswith("a" * MAX_HEADER_CHARS)
-    assert "+58976 chars" in record.request_headers["X-Pad-0"]  # says what was dropped
+    first_pad = next(value for name, value in record.request_headers if name == "X-Pad-0")
+    assert first_pad.startswith("a" * MAX_HEADER_CHARS)
+    assert "+58976 chars" in first_pad  # says what was dropped
     assert stored < 200_000, f"headers still uncapped: {stored:,} chars"
