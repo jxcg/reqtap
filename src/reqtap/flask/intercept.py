@@ -38,7 +38,10 @@ def install(
     @app.before_request
     def _begin() -> None:
         """Grab request fields before the route handler runs."""
-        if request.path.startswith((DASHBOARD_PREFIX_LONG, DASHBOARD_PREFIX_SHORT)):
+        dashboard_roots = (DASHBOARD_PREFIX_LONG, DASHBOARD_PREFIX_SHORT)
+        if request.path in dashboard_roots or request.path.startswith(
+            tuple(f"{root}/" for root in dashboard_roots)
+        ):
             return
 
         try:

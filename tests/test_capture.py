@@ -179,11 +179,27 @@ def test_large_body_is_truncated() -> None:
     assert len(record.request_body.encode("utf-8")) <= 10
 
 
-def test_dashboard_traffic_is_not_captured() -> None:
+@pytest.mark.parametrize(
+    "path",
+    ["/_reqtap", "/_reqtap/anything", "/_rq", "/_rq/anything"],
+)
+def test_dashboard_traffic_is_not_captured(path: str) -> None:
     app, tap = build_app()
-    # Status doesn't matter: the skip is on the path prefix, not the outcome.
-    app.test_client().get("/_reqtap/anything")
+    # Status doesn't matter: the skip is based on the reserved route namespace.
+    app.test_client().get(path)
     assert tap.store.list() == []
+
+
+@pytest.mark.parametrize("path", ["/_reqtapping", "/_reqtapanything", "/_rquest"])
+def test_paths_similar_to_dashboard_routes_are_captured(path: str) -> None:
+    app, tap = build_app()
+
+    response = app.test_client().post(path)
+
+    record = tap.store.list()[0]
+    assert record.method == "POST"
+    assert record.path == path
+    assert record.status == response.status_code
 
 
 def test_app_factory_keeps_one_store_per_app() -> None:
