@@ -1,6 +1,8 @@
 # reqtap
 Req(uest) tap is a tool that lets you tap into your app's traffic, allowing you to see what requests were made, how your code reacted, and what was sent out as the response. It is intended to be a **dev** tool that developers can use to look at API contracts for debugging.
 
+reqtap watches your application’s request timeline, without interfering and becoming a temporal criminal.
+
 ## Flask
 
 Getting started on Flask is easy!
