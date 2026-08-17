@@ -25,6 +25,12 @@ from reqtap.core.store import RingBufferStore
 
 logger = logging.getLogger("reqtap")
 
+# Only ReqTap's own namespaces are skipped: the exact roots and anything below
+# them. Matching on a bare prefix would also swallow app routes that merely
+# start with the same characters, such as /_reqtapping or /_rquest.
+_DASHBOARD_ROOTS = (DASHBOARD_PREFIX_LONG, DASHBOARD_PREFIX_SHORT)
+_DASHBOARD_SUBPATHS = tuple(f"{root}/" for root in _DASHBOARD_ROOTS)
+
 
 def install(
     app: Flask,
@@ -38,7 +44,7 @@ def install(
     @app.before_request
     def _begin() -> None:
         """Grab request fields before the route handler runs."""
-        if request.path.startswith((DASHBOARD_PREFIX_LONG, DASHBOARD_PREFIX_SHORT)):
+        if request.path in _DASHBOARD_ROOTS or request.path.startswith(_DASHBOARD_SUBPATHS):
             return
 
         try:
