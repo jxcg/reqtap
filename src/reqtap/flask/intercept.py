@@ -191,14 +191,12 @@ def _redact_query_string(query_string: str) -> str:
     kept in their original order, repeats included; a bare key with no ``=``
     stays as it is.
     """
-    if not query_string:
-        return ""
-
     redacted = []
     for pair in query_string.split("&"):
         if not pair:
             continue
         key, separator, _ = pair.partition("=")
+        # "token=abc" -> "token=<redacted by reqtap>"; a bare "flag" stays "flag".
         redacted.append(
             f"{key}{separator}{REQTAP_CONTENT_FACING_MESSAGE_REDACTED}" if separator else key
         )
