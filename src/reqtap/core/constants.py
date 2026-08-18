@@ -38,6 +38,30 @@ DEFAULT_REDACT_HEADERS = [
     "X-Xsrf-Token",
 ]
 
+# Substrings matched case-insensitively against a query string key. Unlike the
+# header list above, this catches unlisted variants: "reset_token" and
+# "apiKey" both match. Kept narrow enough not to swallow ordinary parameters —
+# "passphrase" matches, "passenger" does not. Issue #44 proposes the same
+# approach for header names, and should share this list.
+QUERY_REDACT_KEY_PATTERNS = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "passphrase",
+    "pwd",
+    "auth",
+    "apikey",
+    "api_key",
+    "api-key",
+    "signature",
+    "credential",
+    "session",
+    "csrf",
+    "xsrf",
+    "otp",
+)
+
 # Comfortably fits a session cookie or a JWT; the ceiling that matters is
 # 100 headers x 200 records, not any single value.
 MAX_HEADER_CHARS = 1024

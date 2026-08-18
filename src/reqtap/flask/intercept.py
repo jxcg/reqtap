@@ -16,6 +16,7 @@ from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
     MAX_HEADER_CHARS,
+    QUERY_REDACT_KEY_PATTERNS,
     RECORD_KEY,
     REQTAP_CONTENT_FACING_MESSAGE_REDACTED,
     START_KEY,
@@ -184,23 +185,34 @@ def _redact(
 
 
 def _redact_query_string(query_string: str) -> str:
-    """Keep the keys, drop the values.
+    """Mask the values of credential-looking keys, leave the rest readable.
 
-    Reset tokens and API keys routinely travel in the query string, and
-    debugging needs to know a parameter was sent, not what it said. Keys are
-    kept in their original order, repeats included; a bare key with no ``=``
-    stays as it is.
+    Reset tokens and API keys routinely travel in the query string. Redacting
+    every value would hide ordinary debugging detail (``page=2``), so only keys
+    matching :data:`QUERY_REDACT_KEY_PATTERNS` are masked. Keys are kept in
+    their original order, repeats included; a bare key with no ``=`` stays as
+    it is.
+
+    An unlisted credential name is a leak, so the patterns should stay broad;
+    they are substrings, not whole names.
     """
     redacted = []
     for pair in query_string.split("&"):
         if not pair:
             continue
-        key, separator, _ = pair.partition("=")
-        # "token=abc" -> "token=<redacted by reqtap>"; a bare "flag" stays "flag".
-        redacted.append(
-            f"{key}{separator}{REQTAP_CONTENT_FACING_MESSAGE_REDACTED}" if separator else key
-        )
+        key, separator, value = pair.partition("=")
+        # "token=abc" -> "token=<redacted by reqtap>"; "page=2" stays "page=2",
+        # and a bare "flag" (no "=") stays "flag".
+        if separator and _is_secret_key(key):
+            value = REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+        redacted.append(f"{key}{separator}{value}")
     return "&".join(redacted)
+
+
+def _is_secret_key(key: str) -> bool:
+    """Does this query string key look like it carries a credential?"""
+    lowered = key.lower()
+    return any(pattern in lowered for pattern in QUERY_REDACT_KEY_PATTERNS)
 
 
 def _trim_header(value: str) -> str:

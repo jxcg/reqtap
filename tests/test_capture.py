@@ -46,7 +46,7 @@ def test_get_request_is_captured() -> None:
     print(record)
     assert record.method == "GET"
     assert record.path == "/bridge"
-    assert record.query_string == "bridge_colour=<redacted by reqtap>"
+    assert record.query_string == "bridge_colour=red"
     assert record.status == 200
     assert record.duration_ms is not None and record.duration_ms >= 0
     assert "Bridge Colour: red" in record.response_body
@@ -179,16 +179,34 @@ def test_large_body_is_truncated() -> None:
     assert len(record.request_body.encode("utf-8")) <= 10
 
 
-def test_query_values_are_redacted_but_keys_are_kept() -> None:
-    """A reset token in the query string must not land in the buffer."""
+def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
+    """A reset token must not land in the buffer; ordinary params stay readable."""
     app, tap = build_app()
     app.test_client().get("/bridge?token=sk_live_9&page=2")
 
     record = tap.store.list()[0]
-    assert record.query_string == (
-        "token=<redacted by reqtap>&page=<redacted by reqtap>"
-    )
+    assert record.query_string == "token=<redacted by reqtap>&page=2"
     assert "sk_live_9" not in record.query_string
+
+
+@pytest.mark.parametrize(
+    ("query_string", "expected"),
+    [
+        # Patterns are substrings, so unlisted variants are still caught.
+        ("reset_token=x", "reset_token=<redacted by reqtap>"),
+        ("apiKey=x", "apiKey=<redacted by reqtap>"),
+        ("X-Csrf=x", "X-Csrf=<redacted by reqtap>"),
+        # ...but narrow enough to leave ordinary words alone.
+        ("passenger=3", "passenger=3"),
+        ("passphrase=s", "passphrase=<redacted by reqtap>"),
+    ],
+)
+def test_query_key_matching(query_string: str, expected: str) -> None:
+    """Which keys count as carrying a credential."""
+    app, tap = build_app()
+    app.test_client().get(f"/bridge?{query_string}")
+
+    assert tap.store.list()[0].query_string == expected
 
 
 @pytest.mark.parametrize(
@@ -196,8 +214,10 @@ def test_query_values_are_redacted_but_keys_are_kept() -> None:
     [
         ("", ""),
         ("flag", "flag"),
-        ("a=1&a=2", "a=<redacted by reqtap>&a=<redacted by reqtap>"),
-        ("empty=", "empty=<redacted by reqtap>"),
+        ("a=1&a=2", "a=1&a=2"),
+        ("token=1&token=2", "token=<redacted by reqtap>&token=<redacted by reqtap>"),
+        ("empty=", "empty="),
+        ("token=", "token=<redacted by reqtap>"),
     ],
 )
 def test_query_redaction_edge_cases(query_string: str, expected: str) -> None:
