@@ -72,5 +72,7 @@ def test_remote_traffic_is_still_captured() -> None:
 
     assert tap.store is not None
     record = tap.store.list()[0]
-    assert record.remote_addr == "203.0.113.9"
+    assert record.path == "/login"
     assert "hunter2" in record.request_body
+    # The client address is deliberately not stored; the gate reads it live.
+    assert not hasattr(record, "remote_addr")

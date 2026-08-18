@@ -37,8 +37,8 @@ class CapturedRequest:
     # Request
     method: str = ""
     path: str = ""
+    # Values are redacted at capture time; only the keys survive.
     query_string: str = ""
-    remote_addr: str | None = None
     # Pairs, not a dict: HTTP allows a name to repeat (Set-Cookie, Vary, Link)
     # and a dict would keep only the last one.
     request_headers: list[tuple[str, str]] = field(default_factory=list)

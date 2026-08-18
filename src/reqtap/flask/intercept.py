@@ -57,8 +57,9 @@ def install(
                 timestamp_utc=now.isoformat(),
                 method=request.method,
                 path=request.path,
-                query_string=request.query_string.decode("utf-8", errors="replace"),
-                remote_addr=request.remote_addr,
+                query_string=_redact_query_string(
+                    request.query_string.decode("utf-8", errors="replace")
+                ),
                 request_headers=_redact(request.headers.items(), redact_headers),
             )
         except Exception:
@@ -180,6 +181,28 @@ def _redact(
         )
         for key, value in header_items
     ]
+
+
+def _redact_query_string(query_string: str) -> str:
+    """Keep the keys, drop the values.
+
+    Reset tokens and API keys routinely travel in the query string, and
+    debugging needs to know a parameter was sent, not what it said. Keys are
+    kept in their original order, repeats included; a bare key with no ``=``
+    stays as it is.
+    """
+    if not query_string:
+        return ""
+
+    redacted = []
+    for pair in query_string.split("&"):
+        if not pair:
+            continue
+        key, separator, _ = pair.partition("=")
+        redacted.append(
+            f"{key}{separator}{REQTAP_CONTENT_FACING_MESSAGE_REDACTED}" if separator else key
+        )
+    return "&".join(redacted)
 
 
 def _trim_header(value: str) -> str:

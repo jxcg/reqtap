@@ -46,7 +46,7 @@ def test_get_request_is_captured() -> None:
     print(record)
     assert record.method == "GET"
     assert record.path == "/bridge"
-    assert record.query_string == "bridge_colour=red"
+    assert record.query_string == "bridge_colour=<redacted by reqtap>"
     assert record.status == 200
     assert record.duration_ms is not None and record.duration_ms >= 0
     assert "Bridge Colour: red" in record.response_body
@@ -177,6 +177,45 @@ def test_large_body_is_truncated() -> None:
     record = tap.store.list()[0]
     assert record.request_body_truncated is True
     assert len(record.request_body.encode("utf-8")) <= 10
+
+
+def test_query_values_are_redacted_but_keys_are_kept() -> None:
+    """A reset token in the query string must not land in the buffer."""
+    app, tap = build_app()
+    app.test_client().get("/bridge?token=sk_live_9&page=2")
+
+    record = tap.store.list()[0]
+    assert record.query_string == (
+        "token=<redacted by reqtap>&page=<redacted by reqtap>"
+    )
+    assert "sk_live_9" not in record.query_string
+
+
+@pytest.mark.parametrize(
+    ("query_string", "expected"),
+    [
+        ("", ""),
+        ("flag", "flag"),
+        ("a=1&a=2", "a=<redacted by reqtap>&a=<redacted by reqtap>"),
+        ("empty=", "empty=<redacted by reqtap>"),
+    ],
+)
+def test_query_redaction_edge_cases(query_string: str, expected: str) -> None:
+    """Bare keys, repeats, and empty values keep their shape."""
+    app, tap = build_app()
+    app.test_client().get(f"/bridge?{query_string}" if query_string else "/bridge")
+
+    assert tap.store.list()[0].query_string == expected
+
+
+def test_client_address_is_not_stored() -> None:
+    """Personal data with little debugging value: not captured at all."""
+    app, tap = build_app()
+    app.test_client().get("/bridge", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
+
+    record = tap.store.list()[0]
+    assert not hasattr(record, "remote_addr")
+    assert "203.0.113.9" not in str(record.to_dict())
 
 
 @pytest.mark.parametrize(
