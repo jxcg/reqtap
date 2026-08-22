@@ -37,8 +37,10 @@ class CapturedRequest:
     # Request
     method: str = ""
     path: str = ""
+    # Values on credential-looking keys are redacted at capture time.
     query_string: str = ""
-    remote_addr: str | None = None
+    # Client addresses are deliberately not stored; the dashboard gate checks
+    # the live request address instead.
     # Pairs, not a dict: HTTP allows a name to repeat (Set-Cookie, Vary, Link)
     # and a dict would keep only the last one.
     request_headers: list[tuple[str, str]] = field(default_factory=list)

@@ -127,13 +127,43 @@ def test_error_captures_traceback_and_500() -> None:
     assert "kaboom" in record.traceback
 
 
-def test_sensitive_headers_are_redacted() -> None:
+@pytest.mark.parametrize(
+    "header_name",
+    [
+        "Authorization",
+        "Api-Key",
+        "X-API-Token",
+        "X-Vendor-Secret",
+        "X-OAuth-Code",
+    ],
+)
+def test_sensitive_headers_are_redacted(header_name: str) -> None:
     app, tap = build_app()
-    app.test_client().get("/hello", headers={"Authorization": "Bearer secret-token"})
+    app.test_client().get("/hello", headers={header_name: "secret-value"})
 
     record = tap.store.list()[0]
-    assert ("Authorization", REQTAP_CONTENT_FACING_MESSAGE_REDACTED) in record.request_headers
-    assert "secret-token" not in str(record.request_headers)
+    assert REQTAP_CONTENT_FACING_MESSAGE_REDACTED in dict(record.request_headers).values()
+    assert "secret-value" not in str(record.request_headers)
+
+
+@pytest.mark.parametrize("header_name", ["Author", "X-Coauthor", "X-Footpath"])
+def test_ordinary_headers_are_not_redacted(header_name: str) -> None:
+    app, tap = build_app()
+    app.test_client().get("/hello", headers={header_name: "useful-value"})
+
+    assert "useful-value" in dict(tap.store.list()[0].request_headers).values()
+
+
+def test_custom_header_redaction_extends_automatic_patterns() -> None:
+    app, tap = build_app(redact_headers=["X-Custom-Id"])
+    app.test_client().get(
+        "/hello",
+        headers={"Authorization": "automatic-secret", "X-Custom-Id": "custom-secret"},
+    )
+
+    headers = dict(tap.store.list()[0].request_headers)
+    assert headers["Authorization"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+    assert headers["X-Custom-Id"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
 
 
 def test_repeated_headers_are_all_captured() -> None:
@@ -177,6 +207,81 @@ def test_large_body_is_truncated() -> None:
     record = tap.store.list()[0]
     assert record.request_body_truncated is True
     assert len(record.request_body.encode("utf-8")) <= 10
+
+
+def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
+    """A reset token must not land in the buffer; ordinary params stay readable."""
+    app, tap = build_app()
+    app.test_client().get("/bridge?token=sk_live_9&page=2")
+
+    record = tap.store.list()[0]
+    assert record.query_string == "token=<redacted by reqtap>&page=2"
+    assert "sk_live_9" not in record.query_string
+
+
+@pytest.mark.parametrize(
+    ("query_string", "expected"),
+    [
+        # Patterns are substrings, so unlisted variants are still caught.
+        ("reset_token=x", "reset_token=<redacted by reqtap>"),
+        ("apiKey=x", "apiKey=<redacted by reqtap>"),
+        ("X-Csrf=x", "X-Csrf=<redacted by reqtap>"),
+        # Match the decoded key Flask gives the application, while preserving
+        # its original spelling in the captured query string.
+        ("to%6ben=x", "to%6ben=<redacted by reqtap>"),
+        ("api%5Fkey=x", "api%5Fkey=<redacted by reqtap>"),
+        # ...but narrow enough to leave ordinary words alone.
+        ("author=josh", "author=josh"),
+        ("auth=x", "auth=<redacted by reqtap>"),
+        ("user_auth=x", "user_auth=<redacted by reqtap>"),
+        # Short names are matched as whole words, so ordinary words that merely
+        # contain them stay readable.
+        ("coauthor=jane", "coauthor=jane"),
+        ("oauth=x", "oauth=<redacted by reqtap>"),
+        ("carbon_footprint=2", "carbon_footprint=2"),
+        ("otp=123456", "otp=<redacted by reqtap>"),
+        # A hump counts as a word break too, or "userAuth" would slip through.
+        ("userAuth=x", "userAuth=<redacted by reqtap>"),
+        ("otpCode=x", "otpCode=<redacted by reqtap>"),
+        ("passenger=3", "passenger=3"),
+        ("passphrase=s", "passphrase=<redacted by reqtap>"),
+    ],
+)
+def test_query_key_matching(query_string: str, expected: str) -> None:
+    """Which keys count as carrying a credential."""
+    app, tap = build_app()
+    app.test_client().get(f"/bridge?{query_string}")
+
+    assert tap.store.list()[0].query_string == expected
+
+
+@pytest.mark.parametrize(
+    ("query_string", "expected"),
+    [
+        ("", ""),
+        ("flag", "flag"),
+        ("a=1&a=2", "a=1&a=2"),
+        ("token=1&token=2", "token=<redacted by reqtap>&token=<redacted by reqtap>"),
+        ("empty=", "empty="),
+        ("token=", "token=<redacted by reqtap>"),
+    ],
+)
+def test_query_redaction_edge_cases(query_string: str, expected: str) -> None:
+    """Bare keys, repeats, and empty values keep their shape."""
+    app, tap = build_app()
+    app.test_client().get(f"/bridge?{query_string}" if query_string else "/bridge")
+
+    assert tap.store.list()[0].query_string == expected
+
+
+def test_client_address_is_not_stored() -> None:
+    """Personal data with little debugging value: not captured at all."""
+    app, tap = build_app()
+    app.test_client().get("/bridge", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
+
+    record = tap.store.list()[0]
+    assert not hasattr(record, "remote_addr")
+    assert "203.0.113.9" not in str(record.to_dict())
 
 
 @pytest.mark.parametrize(

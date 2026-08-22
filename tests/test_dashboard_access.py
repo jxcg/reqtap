@@ -12,6 +12,7 @@ from flask import Flask, jsonify
 from reqtap import ReqTap
 from reqtap.flask.dashboard import _is_loopback_address
 
+# A documentation-only address that is reliably not loopback.
 REMOTE_CLIENT = {"REMOTE_ADDR": "203.0.113.9"}
 
 
@@ -68,9 +69,13 @@ def test_short_prefix_mirrors_the_long_one() -> None:
 def test_remote_traffic_is_still_captured() -> None:
     """The gate restricts viewing, not recording: traffic from anywhere is kept."""
     app, tap = build_app()
+    # /login is an ordinary application route, so its request must be captured
+    # even though the same remote client cannot view the reqtap dashboard.
     app.test_client().post("/login", json={"password": "hunter2"}, environ_overrides=REMOTE_CLIENT)
 
     assert tap.store is not None
     record = tap.store.list()[0]
-    assert record.remote_addr == "203.0.113.9"
+    assert record.path == "/login"
     assert "hunter2" in record.request_body
+    # The client address is deliberately not stored; the gate reads it live.
+    assert not hasattr(record, "remote_addr")
