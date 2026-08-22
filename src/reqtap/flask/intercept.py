@@ -9,6 +9,7 @@ import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from urllib.parse import unquote_plus
 
 from flask import Flask, Response, g, request
 
@@ -211,7 +212,13 @@ def _redact_query_string(query_string: str) -> str:
 
 def _is_secret_key(key: str) -> bool:
     """Does this query string key look like it carries a credential?"""
-    lowered = key.lower()
+    # Match what Flask exposes to the application. Otherwise ``to%6ben`` is
+    # read by the app as ``token`` but would evade redaction in the stored copy.
+    lowered = unquote_plus(key).lower()
+    # Treat ``auth`` as a delimited word so ``user_auth`` is masked without
+    # swallowing ordinary keys such as ``author``.
+    if "auth" in lowered.replace("-", "_").split("_"):
+        return True
     return any(pattern in lowered for pattern in QUERY_REDACT_KEY_PATTERNS)
 
 

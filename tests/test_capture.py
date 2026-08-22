@@ -196,7 +196,14 @@ def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
         ("reset_token=x", "reset_token=<redacted by reqtap>"),
         ("apiKey=x", "apiKey=<redacted by reqtap>"),
         ("X-Csrf=x", "X-Csrf=<redacted by reqtap>"),
+        # Match the decoded key Flask gives the application, while preserving
+        # its original spelling in the captured query string.
+        ("to%6ben=x", "to%6ben=<redacted by reqtap>"),
+        ("api%5Fkey=x", "api%5Fkey=<redacted by reqtap>"),
         # ...but narrow enough to leave ordinary words alone.
+        ("author=josh", "author=josh"),
+        ("auth=x", "auth=<redacted by reqtap>"),
+        ("user_auth=x", "user_auth=<redacted by reqtap>"),
         ("passenger=3", "passenger=3"),
         ("passphrase=s", "passphrase=<redacted by reqtap>"),
     ],
