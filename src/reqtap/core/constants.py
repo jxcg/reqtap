@@ -24,18 +24,16 @@ REQTAP_CONTENT_FACING_MESSAGE_REDACTED = "<redacted by reqtap>"
 # Relative to this file, so constants.py must stay one level under reqtap/.
 UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
 
-# Short names that are also fragments of ordinary English words, so they are
-# matched as whole words rather than substrings: as substrings "oauth" hits
-# "coauthor" and "otp" hits "footpath".
+# Matched as whole words, not substrings: "oauth" would otherwise hit
+# "coauthor", and "otp" would hit "footpath".
 SENSITIVE_KEY_WORDS = (
     "auth",
     "oauth",
     "otp",
 )
 
-# Substrings matched case-insensitively against decoded query keys and header
-# names. This catches unlisted variants such as "reset_token", "apiKey", and
-# "X-Vendor-Secret" while leaving ordinary names such as "passenger" alone.
+# Substrings, case-insensitive, over decoded query keys and header names, so
+# unlisted variants like "X-Vendor-Secret" match and "passenger" does not.
 SENSITIVE_KEY_PATTERNS = (
     "token",
     "secret",

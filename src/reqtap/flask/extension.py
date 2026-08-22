@@ -42,8 +42,7 @@ class ReqTap:
         self.live_reqtap_requests = live_reqtap_requests
         self.buffer_size = buffer_size
         self.body_preview_bytes = body_preview_bytes
-        # These exact custom names extend reqtap's automatic sensitive-name
-        # matching rather than replacing its protections.
+        # Custom names add to the automatic matching, they do not replace it.
         self._redact_headers = {name.lower() for name in (redact_headers or [])}
         # One store per app, not one per extension: init_app may be called for
         # several apps and each needs its own buffer.
