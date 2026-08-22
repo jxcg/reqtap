@@ -11,7 +11,6 @@ from flask import Flask, current_app, has_app_context
 from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
-    DEFAULT_REDACT_HEADERS,
     REQTAP_FEEDBACK_MESSAGE_WARN,
 )
 from reqtap.core.safety import is_active
@@ -43,10 +42,9 @@ class ReqTap:
         self.live_reqtap_requests = live_reqtap_requests
         self.buffer_size = buffer_size
         self.body_preview_bytes = body_preview_bytes
-        # Lowercase once so header matching is fast and case-insensitive.
-        self._redact_headers = {
-            name.lower() for name in (redact_headers or DEFAULT_REDACT_HEADERS)
-        }
+        # These exact custom names extend reqtap's automatic sensitive-name
+        # matching rather than replacing its protections.
+        self._redact_headers = {name.lower() for name in (redact_headers or [])}
         # One store per app, not one per extension: init_app may be called for
         # several apps and each needs its own buffer.
         self._apps: list[Flask] = []

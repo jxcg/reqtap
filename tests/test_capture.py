@@ -127,13 +127,43 @@ def test_error_captures_traceback_and_500() -> None:
     assert "kaboom" in record.traceback
 
 
-def test_sensitive_headers_are_redacted() -> None:
+@pytest.mark.parametrize(
+    "header_name",
+    [
+        "Authorization",
+        "Api-Key",
+        "X-API-Token",
+        "X-Vendor-Secret",
+        "X-OAuth-Code",
+    ],
+)
+def test_sensitive_headers_are_redacted(header_name: str) -> None:
     app, tap = build_app()
-    app.test_client().get("/hello", headers={"Authorization": "Bearer secret-token"})
+    app.test_client().get("/hello", headers={header_name: "secret-value"})
 
     record = tap.store.list()[0]
-    assert ("Authorization", REQTAP_CONTENT_FACING_MESSAGE_REDACTED) in record.request_headers
-    assert "secret-token" not in str(record.request_headers)
+    assert REQTAP_CONTENT_FACING_MESSAGE_REDACTED in dict(record.request_headers).values()
+    assert "secret-value" not in str(record.request_headers)
+
+
+@pytest.mark.parametrize("header_name", ["Author", "X-Coauthor", "X-Footpath"])
+def test_ordinary_headers_are_not_redacted(header_name: str) -> None:
+    app, tap = build_app()
+    app.test_client().get("/hello", headers={header_name: "useful-value"})
+
+    assert "useful-value" in dict(tap.store.list()[0].request_headers).values()
+
+
+def test_custom_header_redaction_extends_automatic_patterns() -> None:
+    app, tap = build_app(redact_headers=["X-Custom-Id"])
+    app.test_client().get(
+        "/hello",
+        headers={"Authorization": "automatic-secret", "X-Custom-Id": "custom-secret"},
+    )
+
+    headers = dict(tap.store.list()[0].request_headers)
+    assert headers["Authorization"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+    assert headers["X-Custom-Id"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
 
 
 def test_repeated_headers_are_all_captured() -> None:
@@ -204,6 +234,15 @@ def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
         ("author=josh", "author=josh"),
         ("auth=x", "auth=<redacted by reqtap>"),
         ("user_auth=x", "user_auth=<redacted by reqtap>"),
+        # Short names are matched as whole words, so ordinary words that merely
+        # contain them stay readable.
+        ("coauthor=jane", "coauthor=jane"),
+        ("oauth=x", "oauth=<redacted by reqtap>"),
+        ("carbon_footprint=2", "carbon_footprint=2"),
+        ("otp=123456", "otp=<redacted by reqtap>"),
+        # A hump counts as a word break too, or "userAuth" would slip through.
+        ("userAuth=x", "userAuth=<redacted by reqtap>"),
+        ("otpCode=x", "otpCode=<redacted by reqtap>"),
         ("passenger=3", "passenger=3"),
         ("passphrase=s", "passphrase=<redacted by reqtap>"),
     ],

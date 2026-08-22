@@ -5,6 +5,7 @@
 """
 
 import logging
+import re
 import time
 import traceback as traceback_module
 from collections.abc import Iterable
@@ -17,9 +18,10 @@ from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
     MAX_HEADER_CHARS,
-    QUERY_REDACT_KEY_PATTERNS,
     RECORD_KEY,
     REQTAP_CONTENT_FACING_MESSAGE_REDACTED,
+    SENSITIVE_KEY_PATTERNS,
+    SENSITIVE_KEY_WORDS,
     START_KEY,
 )
 from reqtap.core.models import CapturedRequest, decode_preview
@@ -173,16 +175,20 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
 def _redact(
     header_items: Iterable[tuple[str, str]], redact_headers: set[str]
 ) -> list[tuple[str, str]]:
-    """Copy headers as pairs, masking anything on the redact list."""
+    """Copy headers as pairs, masking automatic and custom sensitive names."""
     return [
         (
             key,
             REQTAP_CONTENT_FACING_MESSAGE_REDACTED
-            if key.lower() in redact_headers
+            if _is_sensitive_key(key) or key.lower() in redact_headers
             else _trim_header(value),
         )
         for key, value in header_items
     ]
+
+
+# Separators, or the gap between a lowercase letter and an uppercase one.
+_WORD_BOUNDARY = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
 
 
 def _redact_query_string(query_string: str) -> str:
@@ -190,7 +196,7 @@ def _redact_query_string(query_string: str) -> str:
 
     Reset tokens and API keys routinely travel in the query string. Redacting
     every value would hide ordinary debugging detail (``page=2``), so only keys
-    matching :data:`QUERY_REDACT_KEY_PATTERNS` are masked. Keys are kept in
+    matching the shared sensitive-name patterns are masked. Keys are kept in
     their original order, repeats included; a bare key with no ``=`` stays as
     it is.
 
@@ -204,22 +210,31 @@ def _redact_query_string(query_string: str) -> str:
         key, separator, value = pair.partition("=")
         # "token=abc" -> "token=<redacted by reqtap>"; "page=2" stays "page=2",
         # and a bare "flag" (no "=") stays "flag".
-        if separator and _is_secret_key(key):
+        # Match the decoded key Flask exposes to the application. Otherwise
+        # ``to%6ben`` is read as ``token`` but would evade capture redaction.
+        if separator and _is_sensitive_key(unquote_plus(key)):
             value = REQTAP_CONTENT_FACING_MESSAGE_REDACTED
         redacted.append(f"{key}{separator}{value}")
     return "&".join(redacted)
 
 
-def _is_secret_key(key: str) -> bool:
-    """Does this query string key look like it carries a credential?"""
-    # Match what Flask exposes to the application. Otherwise ``to%6ben`` is
-    # read by the app as ``token`` but would evade redaction in the stored copy.
-    lowered = unquote_plus(key).lower()
-    # Treat ``auth`` as a delimited word so ``user_auth`` is masked without
-    # swallowing ordinary keys such as ``author``.
-    if "auth" in lowered.replace("-", "_").split("_"):
+def _is_sensitive_key(key: str) -> bool:
+    """Does a decoded query key or header name look sensitive?"""
+    lowered = key.lower()
+    words = _split_words(key)
+    if any(word in words for word in SENSITIVE_KEY_WORDS):
         return True
-    return any(pattern in lowered for pattern in QUERY_REDACT_KEY_PATTERNS)
+    return any(pattern in lowered for pattern in SENSITIVE_KEY_PATTERNS)
+
+
+def _split_words(key: str) -> list[str]:
+    """Break a key into lowercase words on separators and camelCase humps.
+
+    Both halves matter: splitting only on separators masks ``user_auth`` but
+    misses ``userAuth``, and matching ``auth`` as a substring instead would
+    mask ``author``.
+    """
+    return [word.lower() for word in _WORD_BOUNDARY.split(key) if word]
 
 
 def _trim_header(value: str) -> str:

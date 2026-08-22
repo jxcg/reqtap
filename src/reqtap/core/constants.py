@@ -24,26 +24,19 @@ REQTAP_CONTENT_FACING_MESSAGE_REDACTED = "<redacted by reqtap>"
 # Relative to this file, so constants.py must stay one level under reqtap/.
 UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
 
-# Matched case-insensitively on the whole name, so every variant needs its own
-# entry: "Cookie" does not cover "Set-Cookie", and no X- prefix is implied.
-# Pattern matching would cover unlisted vendor headers: see issue #44.
-DEFAULT_REDACT_HEADERS = [
-    "Authorization",
-    "Proxy-Authorization",
-    "Cookie",
-    "Set-Cookie",
-    "X-Api-Key",
-    "X-Auth-Token",
-    "X-Csrf-Token",
-    "X-Xsrf-Token",
-]
+# Short names that are also fragments of ordinary English words, so they are
+# matched as whole words rather than substrings: as substrings "oauth" hits
+# "coauthor" and "otp" hits "footpath".
+SENSITIVE_KEY_WORDS = (
+    "auth",
+    "oauth",
+    "otp",
+)
 
-# Substrings matched case-insensitively against a query string key. Unlike the
-# header list above, this catches unlisted variants: "reset_token" and
-# "apiKey" both match. Kept narrow enough not to swallow ordinary parameters —
-# "passphrase" matches, "passenger" does not. Issue #44 proposes the same
-# approach for header names, and should share this list.
-QUERY_REDACT_KEY_PATTERNS = (
+# Substrings matched case-insensitively against decoded query keys and header
+# names. This catches unlisted variants such as "reset_token", "apiKey", and
+# "X-Vendor-Secret" while leaving ordinary names such as "passenger" alone.
+SENSITIVE_KEY_PATTERNS = (
     "token",
     "secret",
     "password",
@@ -52,16 +45,15 @@ QUERY_REDACT_KEY_PATTERNS = (
     "pwd",
     "authorization",
     "authentication",
-    "oauth",
     "apikey",
     "api_key",
     "api-key",
     "signature",
     "credential",
     "session",
+    "cookie",
     "csrf",
     "xsrf",
-    "otp",
 )
 
 # Comfortably fits a session cookie or a JWT; the ceiling that matters is
