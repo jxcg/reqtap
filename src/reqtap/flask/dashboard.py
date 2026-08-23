@@ -39,32 +39,38 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
     @blueprint.before_request
     def require_local_access() -> None:
-        """Keep captured application data away from remote clients and other sites.
+        """Keep captured data away from remote clients and from other websites.
 
-        The peer address on its own is not enough. Any website can point one of
-        its own names at 127.0.0.1 (DNS rebinding) and then make the visitor's
-        browser fetch this dashboard: the connection really does come from the
-        local machine, so the address check passes. The Host header still says
-        the attacker's name, so checking it closes that hole.
-
-        Assumes the client is talking to this app directly. Behind a proxy that
-        Flask is told to trust (ProxyFix), both the peer address and Host come
-        from headers the caller can set, so neither check can be relied on.
-        That gap is tracked separately as issue #57.
+        The address alone is not enough: a website can point one of its own
+        names at 127.0.0.1 (DNS rebinding) and have a visitor's browser fetch
+        this dashboard, so the connection really is local. The Host header
+        still carries the attacker's name, which is what gives it away.
         """
+        # Assumes nothing sits in front of this app. Behind a proxy Flask is
+        # told to trust (ProxyFix), both values below come from headers the
+        # caller can set, so neither holds. Tracked as issue #57.
         if not _is_loopback_address(request.remote_addr):
             abort(403)
 
         if not _is_local_host_name(request.host):
             abort(403)
 
-        # Browsers only send these on requests started by another site. If the
-        # host app enables CORS, a correct-Host request from an attacker's page
-        # would otherwise come back readable. Nothing on the dashboard makes
-        # cross-site requests, so refusing them costs nothing.
-        if request.headers.get("Origin"):
+        # A request another site started must not be able to read this data
+        # back, which is what a CORS-enabled host app would otherwise allow.
+        # Following a plain link here is fine: the page that sent you cannot
+        # read the result of a navigation, and framing is refused separately
+        # by frame-ancestors below.
+        started_elsewhere = request.headers.get("Sec-Fetch-Site", "none") not in (
+            "none",
+            "same-origin",
+        )
+        is_navigation = (
+            request.headers.get("Sec-Fetch-Mode") == "navigate"
+            and request.headers.get("Sec-Fetch-Dest") == "document"
+        )
+        if started_elsewhere and not is_navigation:
             abort(403)
-        if request.headers.get("Sec-Fetch-Site", "none") not in ("none", "same-origin"):
+        if request.headers.get("Origin"):
             abort(403)
 
     @blueprint.after_request
@@ -131,6 +137,12 @@ def _is_local_host_name(host: str) -> bool:
     ``[...]`` around an IPv6 address, and lowercases the name (Host is
     case-insensitive, so ``LOCALHOST`` must be accepted).
     """
+    # "evil.com@localhost": urlsplit would drop everything before the "@" and
+    # see plain "localhost". Werkzeug rejects such a Host before we get here,
+    # but refuse it ourselves so this function is safe on its own.
+    if "@" in host:
+        return False
+
     try:
         name = urlsplit(f"//{host}").hostname
     except ValueError:

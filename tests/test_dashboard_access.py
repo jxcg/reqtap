@@ -4,6 +4,7 @@ This check is the only thing keeping captured bodies, headers and tracebacks
 away from other machines. It restricts viewing, never capture.
 """
 
+from io import BytesIO, StringIO
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ from reqtap import ReqTap
 from reqtap.core.constants import (
     REQTAP_USER_FACING_MSG_BODY_NOT_READ,
 )
-from reqtap.flask.dashboard import _is_loopback_address
+from reqtap.flask.dashboard import _is_local_host_name, _is_loopback_address
 
 # A documentation-only address that is reliably not loopback.
 REMOTE_CLIENT = {"REMOTE_ADDR": "203.0.113.9"}
@@ -118,33 +119,85 @@ def test_host_header_gate(host: str, allowed: bool, prefix: str) -> None:
     assert response.status_code == (200 if allowed else 403)
 
 
-def test_missing_host_is_refused() -> None:
-    """No Host at all is not a local request; refuse rather than guess."""
-    app, _ = build_app()
-    environ = {"HTTP_HOST": "", "SERVER_NAME": "", "SERVER_PORT": ""}
-    response = app.test_client().get("/_reqtap/api/requests", environ_overrides=environ)
+def test_host_falls_back_to_the_address_the_server_is_bound_to() -> None:
+    """A request with no Host line at all is judged by the server's own name.
 
-    assert response.status_code == 403
+    HTTP/1.0 clients may omit Host. Flask then falls back to the address the
+    server is listening on, so a server bound to loopback -- which is how
+    reqtap is meant to be run -- still answers. With no name to fall back on
+    either, there is nothing to check and the request is refused.
+    """
+    app, _ = build_app()
+
+    def call(server_name: str) -> str:
+        """Drive the WSGI app directly; the test client always sets a Host."""
+        environ = {
+            "REQUEST_METHOD": "GET",
+            "PATH_INFO": "/_reqtap/api/requests",
+            "SERVER_NAME": server_name,
+            "SERVER_PORT": "5000",
+            "SERVER_PROTOCOL": "HTTP/1.0",
+            "REMOTE_ADDR": "127.0.0.1",
+            "wsgi.url_scheme": "http",
+            "wsgi.input": BytesIO(b""),
+            "wsgi.errors": StringIO(),
+        }
+        seen: list[str] = []
+        app.wsgi_app(environ, lambda status, headers: seen.append(status))  # type: ignore[arg-type]
+        return seen[0]
+
+    assert call("127.0.0.1").startswith("200")
+    assert call("").startswith("403")
+
+
+def test_userinfo_in_the_host_is_refused() -> None:
+    """A host like ``evil.com@localhost`` must not be read as plain localhost."""
+    assert _is_local_host_name("evil.com@localhost") is False
+
+
+# A browser labels every request with where it came from and what it is for.
+# Header values here follow the Fetch Metadata spec; the pass/fail results are
+# measured against our code, not against a real browser.
+NAVIGATION = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
 
 
 @pytest.mark.parametrize(
     ("headers", "allowed"),
     [
+        # Not a browser at all, e.g. curl.
         ({}, True),
-        ({"Sec-Fetch-Site": "none"}, True),  # Typed into the address bar.
-        ({"Sec-Fetch-Site": "same-origin"}, True),  # From the dashboard itself.
-        ({"Sec-Fetch-Site": "cross-site"}, False),
-        ({"Sec-Fetch-Site": "same-site"}, False),
+        # Typed in the address bar or opened from a bookmark.
+        ({"Sec-Fetch-Site": "none", **NAVIGATION}, True),
+        # A link on the dashboard itself.
+        ({"Sec-Fetch-Site": "same-origin", **NAVIGATION}, True),
+        # A link on another local dev server, or in docs or a chat app. The
+        # page that sent you here cannot read what comes back.
+        ({"Sec-Fetch-Site": "same-site", **NAVIGATION}, True),
+        ({"Sec-Fetch-Site": "cross-site", **NAVIGATION}, True),
+        # Script on another site fetching the data, which is the attack.
+        ({"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"}, False),
+        ({"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors"}, False),
+        # Another site loading the dashboard in a frame.
+        (
+            {
+                "Sec-Fetch-Site": "cross-site",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "iframe",
+            },
+            False,
+        ),
+        # Origin appears on cross-site sends such as a form post.
         ({"Origin": "https://evil.com"}, False),
     ],
 )
 def test_cross_site_requests_are_refused(headers: dict[str, str], allowed: bool) -> None:
     """A correct Host is not enough when the host app turns CORS on.
 
-    With flask-cors installed on the host app, a request from an attacker's page
-    that carries the right Host would come back with the attacker's origin
-    allowed, letting them read the buffer. Browsers mark those requests with
-    Origin / Sec-Fetch-Site, and the dashboard has no use for either.
+    With flask-cors on the host app, a script on an attacker's page that sends
+    the right Host would get the buffer back with its own origin allowed. Those
+    requests are labelled cross-site, and nothing on the dashboard needs to be
+    fetched by another site. Following a link here is a different thing and
+    still works.
     """
     app, _ = build_app()
     response = app.test_client().get("/_reqtap/api/requests", headers=headers)
