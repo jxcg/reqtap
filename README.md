@@ -27,6 +27,23 @@ Run your app as normal. Requests/responses are captured in memory only, precisel
 `live_reqtap_requests` must be set to `True` for logging. Without this, reqtap does absolutely nothing.
 **I would advise against enabling this in production :)**
 
+### What gets hidden
+
+Anything that looks like a password or a key is swapped for
+`<redacted by reqtap>` before it is stored. That covers `Authorization`,
+`Cookie`, `X-Api-Key`, `?token=`, `?client_secret=`, and anything else named
+like them. reqtap goes by the name, so it also catches ones it has never seen
+before, such as `X-Shopify-Access-Token`. Harmless names are kept as they are,
+so `?page=2` still shows up. The caller's IP address is not stored at all.
+
+Two things to watch:
+
+- **What you send in the body is kept exactly as sent.** POST
+  `{"password": "..."}` and that password is stored. reqtap only reads names,
+  and the body isn't one.
+- `redact_headers=["X-My-Header"]` hides that header **on top of** the ones
+  above. It does not switch the rest off.
+
 ### Dashboard
 
 Once active, reqtap mounts a dashboard at **`/_reqtap/`** (or the shorter **`/_rq/`**). Open it from the same machine to see captured requests newest first — time, method, path, status, duration. 4xx shows amber; 5xx and unhandled exceptions show red. Reload the page to see new requests.
