@@ -176,6 +176,15 @@ NAVIGATION = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
         ({"Sec-Fetch-Site": "cross-site", **NAVIGATION}, True),
         # Script on another site fetching the data, which is the attack.
         ({"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"}, False),
+        # A fetch is not a navigation, whatever destination it claims.
+        (
+            {
+                "Sec-Fetch-Site": "cross-site",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Dest": "document",
+            },
+            False,
+        ),
         ({"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors"}, False),
         # Another site loading the dashboard in a frame.
         (
@@ -233,3 +242,20 @@ def test_known_gap_behind_a_trusted_proxy() -> None:
 
     # Not the behaviour we want, just the behaviour we have. See issue #57.
     assert response.status_code == 200
+
+
+def test_only_a_plain_get_counts_as_following_a_link() -> None:
+    """Clicking a link cannot clear the buffer.
+
+    A link is always a GET, so a DELETE labelled as a navigation did not come
+    from one. No browser sends this, but the rule should say what it means.
+    """
+    app, _ = build_app()
+    navigation = {
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+    }
+    response = app.test_client().delete("/_reqtap/api/requests", headers=navigation)
+
+    assert response.status_code == 403

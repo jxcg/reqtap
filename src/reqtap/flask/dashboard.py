@@ -57,18 +57,20 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
         # A request another site started must not be able to read this data
         # back, which is what a CORS-enabled host app would otherwise allow.
-        # Following a plain link here is fine: the page that sent you cannot
-        # read the result of a navigation, and framing is refused separately
-        # by frame-ancestors below.
+        # Following a link here is the exception: the page that sent you
+        # cannot read what comes back, and framing is refused separately by
+        # frame-ancestors below. A link is always a plain GET of a whole page,
+        # so anything else is a script or a frame, whatever it labels itself.
         started_elsewhere = request.headers.get("Sec-Fetch-Site", "none") not in (
             "none",
             "same-origin",
         )
-        is_navigation = (
-            request.headers.get("Sec-Fetch-Mode") == "navigate"
+        followed_a_link = (
+            request.method == "GET"
+            and request.headers.get("Sec-Fetch-Mode") == "navigate"
             and request.headers.get("Sec-Fetch-Dest") == "document"
         )
-        if started_elsewhere and not is_navigation:
+        if started_elsewhere and not followed_a_link:
             abort(403)
         if request.headers.get("Origin"):
             abort(403)
