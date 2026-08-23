@@ -196,22 +196,16 @@ def _redact_query_string(query_string: str) -> str:
 
     Reset tokens and API keys routinely travel in the query string. Redacting
     every value would hide ordinary debugging detail (``page=2``), so only keys
-    matching the shared sensitive-name patterns are masked. Keys are kept in
-    their original order, repeats included; a bare key with no ``=`` stays as
-    it is.
-
-    An unlisted credential name is a leak, so the patterns should stay broad;
-    they are substrings, not whole names.
+    matching the shared sensitive-name patterns are masked. Key order,
+    repeats, and bare keys with no ``=`` are preserved as sent.
     """
     redacted = []
     for pair in query_string.split("&"):
         if not pair:
             continue
         key, separator, value = pair.partition("=")
-        # "token=abc" -> "token=<redacted by reqtap>"; "page=2" stays "page=2",
-        # and a bare "flag" (no "=") stays "flag".
-        # Match the decoded key Flask exposes to the application. Otherwise
-        # ``to%6ben`` is read as ``token`` but would evade capture redaction.
+        # Decode first: the app reads ``to%6ben`` as ``token``, so the stored
+        # copy must match on the same name.
         if separator and _is_sensitive_key(unquote_plus(key)):
             value = REQTAP_CONTENT_FACING_MESSAGE_REDACTED
         redacted.append(f"{key}{separator}{value}")
