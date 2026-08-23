@@ -8,6 +8,7 @@ The interceptor ignores this path, so the dashboard never captures itself.
 import json
 from ipaddress import IPv6Address, ip_address
 from typing import Any
+from urllib.parse import urlsplit
 
 import jinja2
 from flask import Blueprint, Response, abort, request
@@ -38,8 +39,32 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
     @blueprint.before_request
     def require_local_access() -> None:
-        """Keep captured application data inaccessible to remote clients."""
+        """Keep captured application data away from remote clients and other sites.
+
+        The peer address on its own is not enough. Any website can point one of
+        its own names at 127.0.0.1 (DNS rebinding) and then make the visitor's
+        browser fetch this dashboard: the connection really does come from the
+        local machine, so the address check passes. The Host header still says
+        the attacker's name, so checking it closes that hole.
+
+        Assumes the client is talking to this app directly. Behind a proxy that
+        Flask is told to trust (ProxyFix), both the peer address and Host come
+        from headers the caller can set, so neither check can be relied on.
+        That gap is tracked separately as issue #57.
+        """
         if not _is_loopback_address(request.remote_addr):
+            abort(403)
+
+        if not _is_local_host_name(request.host):
+            abort(403)
+
+        # Browsers only send these on requests started by another site. If the
+        # host app enables CORS, a correct-Host request from an attacker's page
+        # would otherwise come back readable. Nothing on the dashboard makes
+        # cross-site requests, so refusing them costs nothing.
+        if request.headers.get("Origin"):
+            abort(403)
+        if request.headers.get("Sec-Fetch-Site", "none") not in ("none", "same-origin"):
             abort(403)
 
     @blueprint.after_request
@@ -52,7 +77,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         """
         response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'unsafe-inline'"
+            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
         )
         return response
 
@@ -97,6 +122,34 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         return _json_response({"cleared": True})
 
     return blueprint
+
+
+def _is_local_host_name(host: str) -> bool:
+    """Return whether a ``Host`` header names this machine.
+
+    ``urlsplit`` does the fiddly parts for us: it drops the port, unwraps the
+    ``[...]`` around an IPv6 address, and lowercases the name (Host is
+    case-insensitive, so ``LOCALHOST`` must be accepted).
+    """
+    try:
+        name = urlsplit(f"//{host}").hostname
+    except ValueError:
+        # Malformed, e.g. an unclosed IPv6 bracket.
+        return False
+
+    if not name:
+        return False
+
+    # "localhost." and "localhost" are the same name to a resolver.
+    name = name.removesuffix(".")
+
+    # Browsers resolve localhost and anything under it to loopback (RFC 6761),
+    # so "myapp.localhost" is us. "localhost.evil.com" is not, and does not
+    # match either branch.
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+
+    return _is_loopback_address(name)
 
 
 def _is_loopback_address(address: str | None) -> bool:

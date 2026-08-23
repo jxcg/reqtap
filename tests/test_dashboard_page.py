@@ -94,6 +94,6 @@ def test_dashboard_denies_scripts() -> None:
     response = app.test_client().get("/_reqtap/")
 
     assert response.headers["Content-Security-Policy"] == (
-        "default-src 'none'; style-src 'unsafe-inline'"
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
     )
     assert response.headers["Cache-Control"] == "no-store"
