@@ -5,24 +5,20 @@ build-backend = "hatchling.build"
 [project]
 name = "reqtap"
 version = "0.0.1"
-description = "A wiretap for your web app's requests. Passively capture and inspect traffic from inside your Flask app."
+description = "A development-time wiretap for capturing and inspecting web application traffic."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Joshua Ng" }]
-keywords = ["flask", "debugging", "requests", "wsgi", "developer-tools"]
+keywords = ["debugging", "http", "developer-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Framework :: Flask",
-    "Environment :: Web Environment",
-    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Debuggers",
-    "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
     "Typing :: Typed",
 ]
 dependencies = []
