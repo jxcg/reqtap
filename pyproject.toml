@@ -11,7 +11,26 @@ requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Joshua Ng" }]
 keywords = ["flask", "debugging", "requests", "wsgi", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Framework :: Flask",
+    "Environment :: Web Environment",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
+    "Typing :: Typed",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/jxcg/reqtap"
+Source = "https://github.com/jxcg/reqtap"
+Issues = "https://github.com/jxcg/reqtap/issues"
 
 [project.optional-dependencies]
 # Flask is an optional extra: the core package has zero hard dependencies, so
@@ -22,6 +41,12 @@ dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.4", "flask>=3.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reqtap"]
+
+# The sdist otherwise picks up any file git does not ignore, including ones
+# tracked in the repo. Kept separate from .gitignore so a tracked file like
+# CLAUDE.md still stays out of a release.
+[tool.hatch.build.targets.sdist]
+exclude = [".codex", ".cursor", ".claude", "CLAUDE.md", "AGENTS.md", "GEMINI.md"]
 
 [tool.ruff]
 line-length = 100
