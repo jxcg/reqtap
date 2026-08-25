@@ -10,6 +10,9 @@ import pytest
 from flask import Flask, jsonify
 
 from reqtap import ReqTap
+from reqtap.core.constants import (
+    REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+)
 from reqtap.flask.dashboard import _is_loopback_address
 
 # A documentation-only address that is reliably not loopback.
@@ -24,8 +27,8 @@ def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
     def login() -> Any:
         return jsonify(ok=True)
 
-    tap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
-    return app, tap
+    rqtap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
+    return app, rqtap
 
 
 @pytest.mark.parametrize(
@@ -68,11 +71,13 @@ def test_short_prefix_mirrors_the_long_one() -> None:
 
 def test_remote_traffic_is_still_captured() -> None:
     """The gate restricts viewing, not recording: traffic from anywhere is kept."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().post("/login", json={"password": "hunter2"}, environ_overrides=REMOTE_CLIENT)
 
-    assert tap.store is not None
-    record = tap.store.list()[0]
+    assert rqtap.store is not None
+    record = rqtap.store.list()[0]
     assert record.path == "/login"
-    assert "hunter2" in record.request_body
+    assert record.status == 200
+    # Handler never reads the body, so reqtap does not have it.
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_NOT_READ
     assert not hasattr(record, "remote_addr")

@@ -1,11 +1,14 @@
-"""Memory use must stay bounded by the configured request preview size."""
+"""reqtap must never pull a whole request into memory to record it."""
 
 import tracemalloc
 
 from flask import Flask
 
 from reqtap import ReqTap
-from reqtap.core.constants import MAX_HEADER_CHARS
+from reqtap.core.constants import (
+    MAX_HEADER_CHARS,
+    REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+)
 
 MIB = 1024 * 1024
 BODY_MIB = 4
@@ -20,7 +23,7 @@ def test_big_body_does_not_blow_up_memory() -> None:
     def upload() -> str:
         return "ok"
 
-    tap = ReqTap(app, live_reqtap_requests=True, body_preview_bytes=PREVIEW)
+    rqtap = ReqTap(app, live_reqtap_requests=True, body_preview_bytes=PREVIEW)
     client = app.test_client()
     payload = b"a" * (BODY_MIB * MIB)  # built here, outside the measured window
 
@@ -35,15 +38,17 @@ def test_big_body_does_not_blow_up_memory() -> None:
     tracemalloc.stop()
 
     peak_mib = peak / MIB
-    record = tap.store.list()[-1]
+    record = rqtap.store.list()[-1]
     print(
         f"\n{BODY_MIB} MiB body, preview {PREVIEW} B"
         f" -> peak {peak_mib:.2f} MiB, kept {len(record.request_body)} B"
         f" of {record.request_body_total_bytes:,}"
     )
 
-    assert record.request_body == "a" * PREVIEW
-    assert record.request_body_total_bytes == BODY_MIB * MIB  # preview says what it previews
+    # The marker proves reqtap left the body alone; the peak below is a
+    # separate guard that it never reads one unbounded.
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_NOT_READ
+    assert record.request_body_total_bytes == BODY_MIB * MIB  # header still gives the size
     # Allow runtime overhead while keeping capture far below the 4 MiB body size.
     assert peak_mib < 1.0, f"reqtap buffered the body: {peak_mib:.2f} MiB"
 
@@ -56,11 +61,11 @@ def test_padded_headers_do_not_fill_the_buffer() -> None:
     def ping() -> str:
         return "ok"
 
-    tap = ReqTap(app, live_reqtap_requests=True)
+    rqtap = ReqTap(app, live_reqtap_requests=True)
     junk = {f"X-Pad-{n}": "a" * 60_000 for n in range(97)}
     app.test_client().get("/ping", headers=junk)
 
-    record = tap.store.list()[-1]
+    record = rqtap.store.list()[-1]
     stored = sum(len(value) for _, value in record.request_headers)
     print(f"\n97 headers x 60,000 chars sent -> {stored:,} chars stored")
 

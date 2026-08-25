@@ -37,8 +37,8 @@ def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
     def text() -> Response:
         return Response("plain and decodable", mimetype="text/plain")
 
-    tap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
-    return app, tap
+    rqtap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
+    return app, rqtap
 
 
 @pytest.mark.parametrize("path", ["/png", "/latin1"])
@@ -47,22 +47,22 @@ def test_binary_body_is_skipped_not_fatal(path: str) -> None:
 
     /latin1 is labelled text/plain: the bytes decide, not the content type.
     """
-    app, tap = build_app()
+    app, rqtap = build_app()
     response = app.test_client().get(path)
 
     assert response.status_code == 200
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.status == 200
     assert "skipped" in record.response_body
 
 
 def test_send_file_body_is_not_consumed() -> None:
     """The existing direct_passthrough guard still holds."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     response = app.test_client().get("/download")
 
     assert response.data == b"filebytes"
-    assert "skipped" in tap.store.list()[0].response_body
+    assert "skipped" in rqtap.store.list()[0].response_body
 
 
 def run_streamed_endpoint(*, with_reqtap: bool) -> tuple[int, ReqTap | None]:
@@ -81,9 +81,9 @@ def run_streamed_endpoint(*, with_reqtap: bool) -> tuple[int, ReqTap | None]:
 
         return Response(generate(), mimetype="text/event-stream")
 
-    tap = ReqTap(app, live_reqtap_requests=True) if with_reqtap else None
+    rqtap = ReqTap(app, live_reqtap_requests=True) if with_reqtap else None
     app.test_client().get("/stream")
-    return chunks_yielded, tap
+    return chunks_yielded, rqtap
 
 
 def test_generator_response_is_not_drained() -> None:
@@ -93,13 +93,13 @@ def test_generator_response_is_not_drained() -> None:
     layer pulls the first chunk itself to force ``start_response``.
     """
     baseline_chunks, _ = run_streamed_endpoint(with_reqtap=False)
-    captured_chunks, tap = run_streamed_endpoint(with_reqtap=True)
+    captured_chunks, rqtap = run_streamed_endpoint(with_reqtap=True)
 
-    assert tap is not None
+    assert rqtap is not None
     assert captured_chunks == baseline_chunks, (
         f"capture pulled {captured_chunks - baseline_chunks} extra chunks from the stream"
     )
-    assert "skipped" in tap.store.list()[0].response_body
+    assert "skipped" in rqtap.store.list()[0].response_body
 
 
 def test_capture_failure_does_not_break_the_request(

@@ -19,7 +19,10 @@ from reqtap.core.constants import (
     DASHBOARD_PREFIX_SHORT,
     MAX_HEADER_CHARS,
     RECORD_KEY,
-    REQTAP_CONTENT_FACING_MESSAGE_REDACTED,
+    REQTAP_USER_FACING_MSG_BODY_CONSUMED,
+    REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+    REQTAP_USER_FACING_MSG_MULTIPART,
+    REQTAP_USER_FACING_MSG_REDACTED,
     SENSITIVE_KEY_PATTERNS,
     SENSITIVE_KEY_WORDS,
     START_KEY,
@@ -132,25 +135,30 @@ def install(
 
 
 def _capture_request_body(body_preview_bytes: int) -> tuple[str, bool]:
-    """Preview the request body without buffering more than we keep.
+    """Preview the request body without reading more than we already have.
 
     Runs after the handler, so the body is either already in werkzeug's cache
-    (free to reuse) or nobody wanted it (safe to drain).
+    (free to reuse) or nobody read it (reported, never fetched: reading here
+    would wait on bytes the client may never send).
     Skips multipart uploads (don't buffer files into memory for no reason).
     """
     if (request.content_type or "").startswith("multipart/form-data"):
-        return "<skipped: multipart upload>", False
+        return REQTAP_USER_FACING_MSG_MULTIPART, False
 
     # get_data/form/json leave the body cached; reusing it costs nothing.
-    # Otherwise read only what we intend to store, plus one byte to detect more.
     cached = getattr(request, "_cached_data", None)
-    raw = cached if cached is not None else request.stream.read(body_preview_bytes + 1)
+    if cached is not None:
+        return decode_preview(cached, body_preview_bytes)
 
-    if not raw and request.content_length:
+    if not request.content_length:
+        return "", False
+
+    # getattr: Flask types the stream as IO, werkzeug gives a LimitedStream.
+    if getattr(request.stream, "is_exhausted", False):
         # Handler read request.stream directly, which werkzeug does not cache.
-        return "<skipped: body consumed by handler>", False
+        return REQTAP_USER_FACING_MSG_BODY_CONSUMED, False
 
-    return decode_preview(raw, body_preview_bytes)
+    return REQTAP_USER_FACING_MSG_BODY_NOT_READ, False
 
 
 def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple[str, bool]:
@@ -179,7 +187,7 @@ def _redact(
     return [
         (
             key,
-            REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+            REQTAP_USER_FACING_MSG_REDACTED
             if _is_sensitive_key(key) or key.lower() in redact_headers
             else _trim_header(value),
         )
@@ -207,7 +215,7 @@ def _redact_query_string(query_string: str) -> str:
         # Decode first: the app reads ``to%6ben`` as ``token``, so the stored
         # copy must match on the same name.
         if separator and _is_sensitive_key(unquote_plus(key)):
-            value = REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+            value = REQTAP_USER_FACING_MSG_REDACTED
         redacted.append(f"{key}{separator}{value}")
     return "&".join(redacted)
 
