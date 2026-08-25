@@ -20,8 +20,8 @@ def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
         """A plain 200 to capture."""
         return "ok"
 
-    tap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
-    return app, tap
+    rqtap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
+    return app, rqtap
 
 
 def test_captured_request_appears_in_the_page() -> None:

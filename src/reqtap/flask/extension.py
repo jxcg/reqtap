@@ -11,7 +11,7 @@ from flask import Flask, current_app, has_app_context
 from reqtap.core.constants import (
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
-    REQTAP_FEEDBACK_MESSAGE_WARN,
+    REQTAP_USER_FACING_MSG_WARN,
 )
 from reqtap.core.safety import is_active
 from reqtap.core.store import RingBufferStore
@@ -66,7 +66,7 @@ class ReqTap:
             return None
         if len(self._apps) > 1:
             raise RuntimeError(
-                "ReqTap is installed on several apps, so tap.store is ambiguous here. "
+                "ReqTap is installed on several apps, so rqtap.store is ambiguous here. "
                 "Read it inside an app context, or use app.extensions['reqtap']."
             )
         only_app: RingBufferStore = self._apps[0].extensions["reqtap"]
@@ -100,4 +100,4 @@ class ReqTap:
         app.register_blueprint(
             blueprint, name="reqtap_short", url_prefix=DASHBOARD_PREFIX_SHORT
         )
-        logger.warning(REQTAP_FEEDBACK_MESSAGE_WARN)
+        logger.warning(REQTAP_USER_FACING_MSG_WARN)

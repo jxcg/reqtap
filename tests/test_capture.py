@@ -14,12 +14,17 @@ import pytest
 from flask import Flask, Response, jsonify, request
 
 from reqtap import ReqTap
-from reqtap.core.constants import REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+from reqtap.core.constants import (
+    REQTAP_USER_FACING_MSG_BODY_CONSUMED,
+    REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+    REQTAP_USER_FACING_MSG_MULTIPART,
+    REQTAP_USER_FACING_MSG_REDACTED,
+)
 from reqtap.flask import intercept
 
 
 def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
-    """A 3-endpoint app with reqtap activated; returns (app, tap)."""
+    """A 3-endpoint app with reqtap activated; returns (app, rqtap)."""
     app = Flask(__name__)
 
     @app.get("/bridge")
@@ -34,15 +39,15 @@ def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
     def boom() -> NoReturn:
         raise RuntimeError("kaboom")
 
-    tap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
-    return app, tap
+    rqtap = ReqTap(app, live_reqtap_requests=True, **reqtap_kwargs)
+    return app, rqtap
 
 
 def test_get_request_is_captured() -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/bridge?bridge_colour=red")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     print(record)
     assert record.method == "GET"
     assert record.path == "/bridge"
@@ -96,20 +101,20 @@ def test_timing_covers_request_and_response_capture(
         clock += 0.02
         return "ok"
 
-    tap = ReqTap(app, live_reqtap_requests=True)
+    rqtap = ReqTap(app, live_reqtap_requests=True)
     app.test_client().post("/timed", data="payload")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert events.index("timestamp") < events.index("request body")
     assert events.index("timer") < events.index("request body")
     assert record.duration_ms == pytest.approx(60.0)
 
 
 def test_post_body_is_captured_both_ways() -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().post("/echo", json={"item": "coffee"})
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.method == "POST"
     assert record.status == 201
     assert "coffee" in record.request_body
@@ -117,10 +122,10 @@ def test_post_body_is_captured_both_ways() -> None:
 
 
 def test_error_captures_traceback_and_500() -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/boom")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.status == 500
     assert record.traceback is not None
     assert "RuntimeError" in record.traceback
@@ -138,37 +143,37 @@ def test_error_captures_traceback_and_500() -> None:
     ],
 )
 def test_sensitive_headers_are_redacted(header_name: str) -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/hello", headers={header_name: "secret-value"})
 
-    record = tap.store.list()[0]
-    assert REQTAP_CONTENT_FACING_MESSAGE_REDACTED in dict(record.request_headers).values()
+    record = rqtap.store.list()[0]
+    assert REQTAP_USER_FACING_MSG_REDACTED in dict(record.request_headers).values()
     assert "secret-value" not in str(record.request_headers)
 
 
 @pytest.mark.parametrize("header_name", ["Author", "X-Coauthor", "X-Footpath"])
 def test_ordinary_headers_are_not_redacted(header_name: str) -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/hello", headers={header_name: "useful-value"})
 
-    assert "useful-value" in dict(tap.store.list()[0].request_headers).values()
+    assert "useful-value" in dict(rqtap.store.list()[0].request_headers).values()
 
 
 def test_custom_header_redaction_extends_automatic_patterns() -> None:
-    app, tap = build_app(redact_headers=["X-Custom-Id"])
+    app, rqtap = build_app(redact_headers=["X-Custom-Id"])
     app.test_client().get(
         "/hello",
         headers={"Authorization": "automatic-secret", "X-Custom-Id": "custom-secret"},
     )
 
-    headers = dict(tap.store.list()[0].request_headers)
-    assert headers["Authorization"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
-    assert headers["X-Custom-Id"] == REQTAP_CONTENT_FACING_MESSAGE_REDACTED
+    headers = dict(rqtap.store.list()[0].request_headers)
+    assert headers["Authorization"] == REQTAP_USER_FACING_MSG_REDACTED
+    assert headers["X-Custom-Id"] == REQTAP_USER_FACING_MSG_REDACTED
 
 
 def test_repeated_headers_are_all_captured() -> None:
     """Every repeated name must survive; Set-Cookie is the one that carries secrets."""
-    app, tap = build_app()
+    app, rqtap = build_app()
 
     @app.get("/multi")
     def multi() -> Response:
@@ -179,14 +184,14 @@ def test_repeated_headers_are_all_captured() -> None:
 
     app.test_client().get("/multi")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     cookies = [value for name, value in record.response_headers if name == "Set-Cookie"]
     assert len(cookies) == 3
 
 
 def test_response_cookies_are_redacted() -> None:
     """Set-Cookie carries the session being issued, so it must not be stored raw."""
-    app, tap = build_app()
+    app, rqtap = build_app()
 
     @app.get("/login")
     def login() -> Response:
@@ -196,25 +201,25 @@ def test_response_cookies_are_redacted() -> None:
 
     app.test_client().get("/login")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert "secret-token" not in str(record.response_headers)
 
 
 def test_large_body_is_truncated() -> None:
-    app, tap = build_app(body_preview_bytes=10)
+    app, rqtap = build_app(body_preview_bytes=10)
     app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.request_body_truncated is True
     assert len(record.request_body.encode("utf-8")) <= 10
 
 
 def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
     """A reset token must not land in the buffer; ordinary params stay readable."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/bridge?token=sk_live_9&page=2")
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.query_string == "token=<redacted by reqtap>&page=2"
     assert "sk_live_9" not in record.query_string
 
@@ -249,10 +254,10 @@ def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
 )
 def test_query_key_matching(query_string: str, expected: str) -> None:
     """Which keys count as carrying a credential."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get(f"/bridge?{query_string}")
 
-    assert tap.store.list()[0].query_string == expected
+    assert rqtap.store.list()[0].query_string == expected
 
 
 @pytest.mark.parametrize(
@@ -268,18 +273,18 @@ def test_query_key_matching(query_string: str, expected: str) -> None:
 )
 def test_query_redaction_edge_cases(query_string: str, expected: str) -> None:
     """Bare keys, repeats, and empty values keep their shape."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get(f"/bridge?{query_string}" if query_string else "/bridge")
 
-    assert tap.store.list()[0].query_string == expected
+    assert rqtap.store.list()[0].query_string == expected
 
 
 def test_client_address_is_not_stored() -> None:
     """Personal data with little debugging value: not captured at all."""
-    app, tap = build_app()
+    app, rqtap = build_app()
     app.test_client().get("/bridge", environ_overrides={"REMOTE_ADDR": "203.0.113.9"})
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert not hasattr(record, "remote_addr")
     assert "203.0.113.9" not in str(record.to_dict())
 
@@ -289,19 +294,19 @@ def test_client_address_is_not_stored() -> None:
     ["/_reqtap", "/_reqtap/anything", "/_rq", "/_rq/anything"],
 )
 def test_dashboard_traffic_is_not_captured(path: str) -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
     # Status doesn't matter: the skip is based on the reserved route namespace.
     app.test_client().get(path)
-    assert tap.store.list() == []
+    assert rqtap.store.list() == []
 
 
 @pytest.mark.parametrize("path", ["/_reqtapping", "/_reqtapanything", "/_rquest"])
 def test_paths_similar_to_dashboard_routes_are_captured(path: str) -> None:
-    app, tap = build_app()
+    app, rqtap = build_app()
 
     response = app.test_client().post(path)
 
-    record = tap.store.list()[0]
+    record = rqtap.store.list()[0]
     assert record.method == "POST"
     assert record.path == path
     assert record.status == response.status_code
@@ -309,7 +314,7 @@ def test_paths_similar_to_dashboard_routes_are_captured(path: str) -> None:
 
 def test_app_factory_keeps_one_store_per_app() -> None:
     """One extension, two apps: each keeps its own buffer instead of the last one winning."""
-    tap = ReqTap(live_reqtap_requests=True)
+    rqtap = ReqTap(live_reqtap_requests=True)
     first, second = Flask("first"), Flask("second")
 
     for app in (first, second):
@@ -318,17 +323,17 @@ def test_app_factory_keeps_one_store_per_app() -> None:
         def ping() -> str:
             return "ok"
 
-        tap.init_app(app)
+        rqtap.init_app(app)
 
     first.test_client().get("/ping")
 
     assert len(first.extensions["reqtap"].list()) == 1
     assert second.extensions["reqtap"].list() == []
-    # tap.store cannot guess which app is meant outside a request.
+    # rqtap.store cannot guess which app is meant outside a request.
     with pytest.raises(RuntimeError, match="several apps"):
-        _ = tap.store
+        _ = rqtap.store
     with second.app_context():
-        assert tap.store is second.extensions["reqtap"]
+        assert rqtap.store is second.extensions["reqtap"]
 
 
 def test_inactive_captures_nothing() -> None:
@@ -338,8 +343,8 @@ def test_inactive_captures_nothing() -> None:
     def x() -> str:
         return "ok"
 
-    tap = ReqTap(app)  # no flag → off
-    assert tap.store is None
+    rqtap = ReqTap(app)  # no flag → off
+    assert rqtap.store is None
     assert app.test_client().get("/x").status_code == 200  # app still works
 
 
@@ -372,20 +377,58 @@ def build_body_reader_app(read_body: Any) -> tuple[Flask, ReqTap]:
     def read() -> str:
         return repr(read_body())
 
-    tap = ReqTap(app, live_reqtap_requests=True)
-    return app, tap
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    return app, rqtap
 
 
 def test_handler_can_still_read_raw_stream() -> None:
-    app, tap = build_body_reader_app(lambda: request.stream.read())
+    app, rqtap = build_body_reader_app(lambda: request.stream.read())
     response = app.test_client().post("/read", data=b"payload")
 
     assert response.get_data(as_text=True) == repr(b"payload")
     # Reading the stream directly leaves werkzeug nothing cached, and capture
     # runs after the handler, so the body is gone. Say so rather than show "".
-    record = tap.store.list()[0]
-    assert record.request_body == "<skipped: body consumed by handler>"
+    record = rqtap.store.list()[0]
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_CONSUMED
     assert record.request_body_total_bytes == 7
+
+
+def test_request_with_no_body_records_an_empty_one() -> None:
+    """No body sent means no body to report, not an unread one."""
+    app = Flask(__name__)
+
+    @app.get("/ping")
+    def ping() -> str:
+        return "ok"
+
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    app.test_client().get("/ping")
+
+    assert rqtap.store.list()[0].request_body == ""
+
+
+def test_unread_body_is_reported_not_fetched() -> None:
+    """Reading here would wait on the client, so the stream must stay untouched."""
+    app = Flask(__name__)
+
+    @app.post("/guard")
+    def guard() -> tuple[str, int]:
+        return "denied", 401  # never touches the body
+
+    @app.before_request
+    def explode_if_read() -> None:
+        def boom(*args: object, **kwargs: object) -> NoReturn:
+            raise AssertionError("reqtap read the request stream")
+
+        request.stream.read = boom  # type: ignore[method-assign]
+
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    response = app.test_client().post("/guard", data=b"secret-payload")
+
+    record = rqtap.store.list()[0]
+    assert response.status_code == 401
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_NOT_READ
+    assert record.request_body_total_bytes == 14  # the header still tells us the size
 
 
 def test_form_and_json_parsing_still_work() -> None:
@@ -409,10 +452,10 @@ def test_multipart_upload_stream_is_untouched() -> None:
     def upload() -> str:
         return repr(request.files["f"].read())
 
-    tap = ReqTap(app, live_reqtap_requests=True)
+    rqtap = ReqTap(app, live_reqtap_requests=True)
     response = app.test_client().post(
         "/upload", data={"f": (BytesIO(b"file-bytes"), "f.txt")}
     )
 
     assert response.get_data(as_text=True) == repr(b"file-bytes")
-    assert tap.store.list()[0].request_body == "<skipped: multipart upload>"
+    assert rqtap.store.list()[0].request_body == REQTAP_USER_FACING_MSG_MULTIPART

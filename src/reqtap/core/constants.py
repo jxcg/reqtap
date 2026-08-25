@@ -10,7 +10,7 @@ DASHBOARD_PREFIX_SHORT = "/_rq"
 
 # User-facing informational feedback messages
 # The warning message displayed when reqtap is active.
-REQTAP_FEEDBACK_MESSAGE_WARN = (
+REQTAP_USER_FACING_MSG_WARN = (
     "\n"
     "!!!!!!!!!!!!!!!!!!!!!!!! REQTAP WARNING !!!!!!!!!!!!!!!!!!!!!!!!\n"
     "[reqtap] reqtap is ACTIVE: recording request/response bodies, headers, and\n"
@@ -19,7 +19,10 @@ REQTAP_FEEDBACK_MESSAGE_WARN = (
 )
 
 # User-facing informational content messages
-REQTAP_CONTENT_FACING_MESSAGE_REDACTED = "<redacted by reqtap>"
+REQTAP_USER_FACING_MSG_REDACTED = "<redacted by reqtap>"
+REQTAP_USER_FACING_MSG_MULTIPART = "<skipped: multipart upload>"
+REQTAP_USER_FACING_MSG_BODY_CONSUMED = "<skipped: body consumed by handler>"
+REQTAP_USER_FACING_MSG_BODY_NOT_READ = "<skipped: body not read by handler>"
 
 # Relative to this file, so constants.py must stay one level under reqtap/.
 UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
