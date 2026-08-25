@@ -31,6 +31,14 @@ dist/
 
 # Author Misc
 plans/
-.claude/
 docs/
+
+# AI assistant config and instructions
+.claude/
+.codex/
+.cursor/
+.aider*
+CLAUDE.md
+AGENTS.md
+GEMINI.md
 
