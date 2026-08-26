@@ -222,13 +222,12 @@ def test_clickjacking_is_blocked() -> None:
     assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
-def test_known_gap_behind_a_trusted_proxy() -> None:
-    """Documents issue #57, which this change does NOT fix.
+def test_forged_proxy_headers_do_not_open_the_gate() -> None:
+    """ProxyFix lets the caller set the address and host, so neither is trusted.
 
-    ProxyFix tells Flask to believe X-Forwarded-For and X-Forwarded-Host. Both
-    values the gate reads then come from the caller, so a remote client can
-    hand itself a pass. The gate only holds when nothing untrusted sits in
-    front of the app.
+    A remote client hands itself a loopback address and a local name. The gate
+    reads what the server saw before those headers were applied, so the claim
+    buys nothing.
     """
     from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -240,7 +239,18 @@ def test_known_gap_behind_a_trusted_proxy() -> None:
         "/_reqtap/api/requests", headers=forged, environ_overrides=REMOTE_CLIENT
     )
 
-    # Not the behaviour we want, just the behaviour we have. See issue #57.
+    assert response.status_code == 403
+
+
+def test_a_real_local_client_still_gets_in_behind_a_proxy() -> None:
+    """The peer is genuinely local, so forged headers or not, it is allowed."""
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app, _ = build_app()
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_host=1)  # type: ignore[method-assign]
+
+    response = app.test_client().get("/_reqtap/api/requests")
+
     assert response.status_code == 200
 
 
