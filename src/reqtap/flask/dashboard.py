@@ -8,6 +8,7 @@ The interceptor ignores this path, so the dashboard never captures itself.
 import json
 from ipaddress import IPv6Address, ip_address
 from typing import Any
+from urllib.parse import urlsplit
 
 import jinja2
 from flask import Blueprint, Response, abort, request
@@ -38,8 +39,40 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
 
     @blueprint.before_request
     def require_local_access() -> None:
-        """Keep captured application data inaccessible to remote clients."""
+        """Keep captured data away from remote clients and from other websites.
+
+        The address alone is not enough: a website can point one of its own
+        names at 127.0.0.1 (DNS rebinding) and have a visitor's browser fetch
+        this dashboard, so the connection really is local. The Host header
+        still carries the attacker's name, which is what gives it away.
+        """
+        # Assumes nothing sits in front of this app. Behind a proxy Flask is
+        # told to trust (ProxyFix), both values below come from headers the
+        # caller can set, so neither holds. Tracked as issue #57.
         if not _is_loopback_address(request.remote_addr):
+            abort(403)
+
+        if not _is_local_host_name(request.host):
+            abort(403)
+
+        # A request another site started must not be able to read this data
+        # back, which is what a CORS-enabled host app would otherwise allow.
+        # Following a link here is the exception: the page that sent you
+        # cannot read what comes back, and framing is refused separately by
+        # frame-ancestors below. A link is always a plain GET of a whole page,
+        # so anything else is a script or a frame, whatever it labels itself.
+        started_elsewhere = request.headers.get("Sec-Fetch-Site", "none") not in (
+            "none",
+            "same-origin",
+        )
+        followed_a_link = (
+            request.method == "GET"
+            and request.headers.get("Sec-Fetch-Mode") == "navigate"
+            and request.headers.get("Sec-Fetch-Dest") == "document"
+        )
+        if started_elsewhere and not followed_a_link:
+            abort(403)
+        if request.headers.get("Origin"):
             abort(403)
 
     @blueprint.after_request
@@ -52,7 +85,7 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         """
         response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'none'; style-src 'unsafe-inline'"
+            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
         )
         return response
 
@@ -97,6 +130,40 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         return _json_response({"cleared": True})
 
     return blueprint
+
+
+def _is_local_host_name(host: str) -> bool:
+    """Return whether a ``Host`` header names this machine.
+
+    ``urlsplit`` does the fiddly parts for us: it drops the port, unwraps the
+    ``[...]`` around an IPv6 address, and lowercases the name (Host is
+    case-insensitive, so ``LOCALHOST`` must be accepted).
+    """
+    # "evil.com@localhost": urlsplit would drop everything before the "@" and
+    # see plain "localhost". Werkzeug rejects such a Host before we get here,
+    # but refuse it ourselves so this function is safe on its own.
+    if "@" in host:
+        return False
+
+    try:
+        name = urlsplit(f"//{host}").hostname
+    except ValueError:
+        # Malformed, e.g. an unclosed IPv6 bracket.
+        return False
+
+    if not name:
+        return False
+
+    # "localhost." and "localhost" are the same name to a resolver.
+    name = name.removesuffix(".")
+
+    # Browsers resolve localhost and anything under it to loopback (RFC 6761),
+    # so "myapp.localhost" is us. "localhost.evil.com" is not, and does not
+    # match either branch.
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+
+    return _is_loopback_address(name)
 
 
 def _is_loopback_address(address: str | None) -> bool:

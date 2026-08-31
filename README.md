@@ -48,7 +48,11 @@ Two things to watch:
 
 Once active, reqtap mounts a dashboard at **`/_reqtap/`** (or the shorter **`/_rq/`**). Open it from the same machine to see captured requests newest first — time, method, path, status, duration. 4xx shows amber; 5xx and unhandled exceptions show red. Reload the page to see new requests.
 
-The dashboard and API only accept loopback clients, never cache their responses, and never capture their own traffic. The page runs no JavaScript and is served with `Content-Security-Policy: default-src 'none'`, so captured data cannot be executed or exfiltrated by anything that reaches it. Do not publish the dashboard through a reverse proxy: proxied clients may appear to reqtap as the proxy's loopback address.
+The dashboard and API answer only when three things hold: the client is on this machine, the address you asked for is a local one (`localhost`, anything under `.localhost`, or any `127.x` / `::1` address, in any capitalisation and with or without a port), and the request was not started by another website. That last check matters because a website can point one of its own names at `127.0.0.1` and have your browser fetch the dashboard for it — the request looks local, but the name in it does not. Clicking a link to the dashboard still works; a script on another page reading it does not.
+
+Responses are never cached, the dashboard never captures its own traffic, the page runs no JavaScript, and it is served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'`, so captured data cannot be executed, exfiltrated, or loaded into a frame on someone else's page.
+
+Do not publish the dashboard through a reverse proxy. If Flask is configured to trust forwarded headers (`ProxyFix`), both the client address and the requested name come from headers the caller sets, and any remote client can hand itself a pass.
 
 For full headers, bodies and tracebacks, use the JSON API below.
 
