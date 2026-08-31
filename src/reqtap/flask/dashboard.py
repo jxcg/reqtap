@@ -45,14 +45,13 @@ def create_blueprint(store: RingBufferStore) -> Blueprint:
         names at 127.0.0.1 (DNS rebinding) and have a visitor's browser fetch
         this dashboard, so the connection really is local. The Host header
         still carries the attacker's name, which is what gives it away.
+
+        Proxy headers are not trusted for either value: see _before_proxy_fix.
         """
-        # Assumes nothing sits in front of this app. Behind a proxy Flask is
-        # told to trust (ProxyFix), both values below come from headers the
-        # caller can set, so neither holds. Tracked as issue #57.
-        if not _is_loopback_address(request.remote_addr):
+        if not _is_loopback_address(_before_proxy_fix("REMOTE_ADDR", request.remote_addr)):
             abort(403)
 
-        if not _is_local_host_name(request.host):
+        if not _is_local_host_name(_before_proxy_fix("HTTP_HOST", request.host) or ""):
             abort(403)
 
         # A request another site started must not be able to read this data
@@ -164,6 +163,19 @@ def _is_local_host_name(host: str) -> bool:
         return True
 
     return _is_loopback_address(name)
+
+
+def _before_proxy_fix(key: str, current: str | None) -> str | None:
+    """The value the server saw, before any proxy header rewrote it.
+
+    ProxyFix takes the address and host from headers the caller sets, so a
+    remote client can hand itself both. It stashes the originals first, and
+    those are what the gate must judge: the real peer, not the claimed one.
+    """
+    original: dict[str, str | None] | None = request.environ.get("werkzeug.proxy_fix.orig")
+    if original is None:
+        return current
+    return original.get(key)
 
 
 def _is_loopback_address(address: str | None) -> bool:
