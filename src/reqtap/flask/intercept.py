@@ -9,6 +9,7 @@ import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
+
 from flask import Flask, Response, g, request
 
 from reqtap.core.constants import (
