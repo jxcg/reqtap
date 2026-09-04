@@ -5,13 +5,10 @@
 """
 
 import logging
-import re
 import time
 import traceback as traceback_module
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from urllib.parse import unquote_plus
-
 from flask import Flask, Response, g, request
 
 from reqtap.core.constants import (
@@ -23,11 +20,14 @@ from reqtap.core.constants import (
     REQTAP_USER_FACING_MSG_BODY_NOT_READ,
     REQTAP_USER_FACING_MSG_MULTIPART,
     REQTAP_USER_FACING_MSG_REDACTED,
-    SENSITIVE_KEY_PATTERNS,
-    SENSITIVE_KEY_WORDS,
     START_KEY,
 )
-from reqtap.core.models import CapturedRequest, decode_preview
+from reqtap.core.models import CapturedRequest
+from reqtap.core.redaction import (
+    is_sensitive_key as _is_sensitive_key,
+    redact_body_preview,
+    redact_query_string as _redact_query_string,
+)
 from reqtap.core.store import RingBufferStore
 
 logger = logging.getLogger("reqtap")
@@ -148,7 +148,7 @@ def _capture_request_body(body_preview_bytes: int) -> tuple[str, bool]:
     # get_data/form/json leave the body cached; reusing it costs nothing.
     cached = getattr(request, "_cached_data", None)
     if cached is not None:
-        return decode_preview(cached, body_preview_bytes)
+        return redact_body_preview(cached, request.mimetype, body_preview_bytes)
 
     if not request.content_length:
         return "", False
@@ -175,7 +175,9 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
     try:
         # Strict: a decode failure here means binary, and errors="replace"
         # would store a screenful of U+FFFD instead of saying so.
-        return decode_preview(raw, body_preview_bytes, errors="strict")
+        return redact_body_preview(
+            raw, response.mimetype, body_preview_bytes, errors="strict"
+        )
     except UnicodeDecodeError:
         return f"<skipped: binary response, {len(raw)} bytes>", False
 
@@ -193,50 +195,6 @@ def _redact(
         )
         for key, value in header_items
     ]
-
-
-# Separators, or the gap between a lowercase letter and an uppercase one.
-_WORD_BOUNDARY = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
-
-
-def _redact_query_string(query_string: str) -> str:
-    """Mask the values of credential-looking keys, leave the rest readable.
-
-    Reset tokens and API keys routinely travel in the query string. Redacting
-    every value would hide ordinary debugging detail (``page=2``), so only keys
-    matching the shared sensitive-name patterns are masked. Key order,
-    repeats, and bare keys with no ``=`` are preserved as sent.
-    """
-    redacted = []
-    for pair in query_string.split("&"):
-        if not pair:
-            continue
-        key, separator, value = pair.partition("=")
-        # Decode first: the app reads ``to%6ben`` as ``token``, so the stored
-        # copy must match on the same name.
-        if separator and _is_sensitive_key(unquote_plus(key)):
-            value = REQTAP_USER_FACING_MSG_REDACTED
-        redacted.append(f"{key}{separator}{value}")
-    return "&".join(redacted)
-
-
-def _is_sensitive_key(key: str) -> bool:
-    """Does a decoded query key or header name look sensitive?"""
-    lowered = key.lower()
-    words = _split_words(key)
-    if any(word in words for word in SENSITIVE_KEY_WORDS):
-        return True
-    return any(pattern in lowered for pattern in SENSITIVE_KEY_PATTERNS)
-
-
-def _split_words(key: str) -> list[str]:
-    """Break a key into lowercase words on separators and camelCase humps.
-
-    Both halves matter: splitting only on separators masks ``user_auth`` but
-    misses ``userAuth``, and matching ``auth`` as a substring instead would
-    mask ``author``.
-    """
-    return [word.lower() for word in _WORD_BOUNDARY.split(key) if word]
 
 
 def _trim_header(value: str) -> str:
