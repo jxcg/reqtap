@@ -4,6 +4,7 @@ Each test wires reqtap into a tiny app, fires a request with the test client,
 and inspects what landed in the store.
 """
 
+import json
 import logging
 import time
 from datetime import datetime
@@ -17,6 +18,7 @@ from reqtap import ReqTap
 from reqtap.core.constants import (
     REQTAP_USER_FACING_MSG_BODY_CONSUMED,
     REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+    REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED,
     REQTAP_USER_FACING_MSG_MULTIPART,
     REQTAP_USER_FACING_MSG_REDACTED,
 )
@@ -121,6 +123,85 @@ def test_post_body_is_captured_both_ways() -> None:
     assert "coffee" in record.response_body
 
 
+@pytest.mark.parametrize(
+    "request_mimetype",
+    ["application/json", "application/problem+json"],
+)
+def test_json_body_sensitive_values_are_redacted_both_ways(
+    request_mimetype: str,
+) -> None:
+    app, rqtap = build_app()
+    payload = {
+        "email": "dev@example.com",
+        "password": "hunter2",
+        "profile": {"oauthToken": "nested-token"},
+        "items": [{"client_secret": "deep-secret", "name": "coffee"}],
+    }
+
+    app.test_client().post(
+        "/echo",
+        data=json.dumps(payload),
+        content_type=request_mimetype,
+    )
+
+    record = rqtap.store.list()[0]
+    for body in (record.request_body, record.response_body):
+        assert REQTAP_USER_FACING_MSG_REDACTED in body
+        assert "hunter2" not in body
+        assert "nested-token" not in body
+        assert "deep-secret" not in body
+        assert "dev@example.com" in body
+        assert "coffee" in body
+
+
+def test_form_body_sensitive_values_are_redacted_both_ways() -> None:
+    app = Flask(__name__)
+
+    @app.post("/form")
+    def form() -> Response:
+        raw = request.get_data(cache=True)
+        return Response(raw, mimetype="application/x-www-form-urlencoded")
+
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    app.test_client().post(
+        "/form",
+        data="username=alice&password=hunter2&api%5Fkey=sk_live_9",
+        content_type="application/x-www-form-urlencoded",
+    )
+
+    record = rqtap.store.list()[0]
+    for body in (record.request_body, record.response_body):
+        assert "username=alice" in body
+        assert body.count(REQTAP_USER_FACING_MSG_REDACTED) == 2
+        assert "hunter2" not in body
+        assert "sk_live_9" not in body
+
+
+def test_malformed_structured_bodies_fail_closed() -> None:
+    app = Flask(__name__)
+
+    @app.post("/malformed")
+    def malformed() -> Response:
+        request.get_data(cache=True)
+        return Response(
+            '{"token":"response-secret"',
+            mimetype="application/json",
+        )
+
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    app.test_client().post(
+        "/malformed",
+        data='{"password":"request-secret"',
+        content_type="application/json",
+    )
+
+    record = rqtap.store.list()[0]
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED
+    assert record.response_body == REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED
+    assert "request-secret" not in record.request_body
+    assert "response-secret" not in record.response_body
+
+
 def test_error_captures_traceback_and_500() -> None:
     app, rqtap = build_app()
     app.test_client().get("/boom")
@@ -207,11 +288,20 @@ def test_response_cookies_are_redacted() -> None:
 
 def test_large_body_is_truncated() -> None:
     app, rqtap = build_app(body_preview_bytes=10)
-    app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
+    payload = {"password": "secret-value", "padding": "x" * 1000}
+    app.test_client().post(
+        "/echo",
+        data=json.dumps(payload),
+        content_type="application/json",
+    )
 
     record = rqtap.store.list()[0]
     assert record.request_body_truncated is True
+    assert record.response_body_truncated is True
     assert len(record.request_body.encode("utf-8")) <= 10
+    assert len(record.response_body.encode("utf-8")) <= 10
+    assert "secret-value" not in record.request_body
+    assert "secret-value" not in record.response_body
 
 
 def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
