@@ -221,6 +221,9 @@ def test_error_captures_traceback_and_500() -> None:
         "X-API-Token",
         "X-Vendor-Secret",
         "X-OAuth-Code",
+        "X-Access-Key",
+        "WWW-Authenticate",
+        "Proxy-Authenticate",
     ],
 )
 def test_sensitive_headers_are_redacted(header_name: str) -> None:
