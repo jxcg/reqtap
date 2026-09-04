@@ -25,9 +25,9 @@ from reqtap.core.constants import (
 )
 from reqtap.core.models import CapturedRequest
 from reqtap.core.redaction import (
-    is_sensitive_key as _is_sensitive_key,
+    is_sensitive_key,
     redact_body_preview,
-    redact_query_string as _redact_query_string,
+    redact_query_string,
 )
 from reqtap.core.store import RingBufferStore
 
@@ -65,7 +65,7 @@ def install(
                 timestamp_utc=now.isoformat(),
                 method=request.method,
                 path=request.path,
-                query_string=_redact_query_string(
+                query_string=redact_query_string(
                     request.query_string.decode("utf-8", errors="replace")
                 ),
                 request_headers=_redact(request.headers.items(), redact_headers),
@@ -191,7 +191,7 @@ def _redact(
         (
             key,
             REQTAP_USER_FACING_MSG_REDACTED
-            if _is_sensitive_key(key) or key.lower() in redact_headers
+            if is_sensitive_key(key) or key.lower() in redact_headers
             else _trim_header(value),
         )
         for key, value in header_items
