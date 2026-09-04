@@ -34,8 +34,6 @@ UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
 # "coauthor", and "otp" would hit "footpath".
 SENSITIVE_KEY_WORDS = (
     "auth",
-    "authenticate",
-    "key",
     "oauth",
     "otp",
 )
