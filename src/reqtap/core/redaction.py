@@ -32,10 +32,7 @@ def redact_body_preview(
     Other media types keep the existing byte-bounded preview behavior.
     """
     normalized_mimetype = (mimetype or "").lower()
-    is_json = (
-        normalized_mimetype == "application/json"
-        or normalized_mimetype.endswith("+json")
-    )
+    is_json = normalized_mimetype == "application/json" or normalized_mimetype.endswith("+json")
     is_form = normalized_mimetype == "application/x-www-form-urlencoded"
 
     if not is_json and not is_form:
