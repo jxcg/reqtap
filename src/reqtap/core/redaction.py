@@ -17,6 +17,14 @@ from reqtap.core.models import decode_preview
 _WORD_BOUNDARY = re.compile(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])")
 
 
+class _JSONNumber(str):
+    """Keep number tokens without float rounding or integer conversion limits."""
+
+
+class _JSONObject(list[tuple[str, Any]]):
+    """Keep every object member, including repeated names, distinct from arrays."""
+
+
 def redact_body_preview(
     raw: bytes,
     mimetype: str | None,
@@ -35,7 +43,7 @@ def redact_body_preview(
     is_json = normalized_mimetype == "application/json" or normalized_mimetype.endswith("+json")
     is_form = normalized_mimetype == "application/x-www-form-urlencoded"
 
-    if not is_json and not is_form:
+    if not raw or (not is_json and not is_form):
         return decode_preview(raw, max_bytes, errors=errors)
 
     # Parsing an arbitrarily large body would make the preview limit meaningless
@@ -46,18 +54,24 @@ def redact_body_preview(
 
     try:
         if is_json:
-            payload = json.loads(raw)
-            redacted = json.dumps(
-                _redact_json_value(payload),
-                ensure_ascii=False,
-                separators=(",", ":"),
+            payload = json.loads(
+                raw,
+                parse_int=_JSONNumber,
+                parse_float=_JSONNumber,
+                parse_constant=_JSONNumber,
+                object_pairs_hook=_JSONObject,
             )
+            redacted = _redact_json_value(payload)
         else:
             redacted = redact_query_string(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
         return _redaction_failure_preview(max_bytes, truncated=False)
 
-    return decode_preview(redacted.encode("utf-8"), max_bytes, errors=errors)
+    # JSON permits escaped lone surrogates; keep them escaped while ordinary
+    # Unicode stays UTF-8, without unnecessarily expanding the preview.
+    return decode_preview(
+        redacted.encode("utf-8", errors="backslashreplace"), max_bytes, errors=errors
+    )
 
 
 def redact_query_string(query_string: str) -> str:
@@ -84,20 +98,26 @@ def is_sensitive_key(key: str) -> bool:
     return any(pattern in lowered for pattern in SENSITIVE_KEY_PATTERNS)
 
 
-def _redact_json_value(value: Any) -> Any:
-    """Recursively mask sensitive object values without hiding ordinary fields."""
-    if isinstance(value, dict):
-        return {
-            key: (
-                REQTAP_USER_FACING_MSG_REDACTED
-                if is_sensitive_key(key)
-                else _redact_json_value(child)
+def _redact_json_value(value: Any) -> str:
+    """Serialize parsed JSON while masking sensitive object values."""
+    if isinstance(value, _JSONNumber):
+        return str(value)
+    if isinstance(value, _JSONObject):
+        return (
+            "{"
+            + ",".join(
+                json.dumps(key, ensure_ascii=False)
+                + ":"
+                + _redact_json_value(
+                    REQTAP_USER_FACING_MSG_REDACTED if is_sensitive_key(key) else child
+                )
+                for key, child in value
             )
-            for key, child in value.items()
-        }
+            + "}"
+        )
     if isinstance(value, list):
-        return [_redact_json_value(child) for child in value]
-    return value
+        return "[" + ",".join(_redact_json_value(child) for child in value) + "]"
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _split_words(key: str) -> list[str]:
