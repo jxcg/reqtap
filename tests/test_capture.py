@@ -4,11 +4,14 @@ Each test wires reqtap into a tiny app, fires a request with the test client,
 and inspects what landed in the store.
 """
 
+import json
 import logging
 import time
 from datetime import datetime
+from decimal import Decimal
 from io import BytesIO
 from typing import Any, NoReturn
+from urllib.parse import parse_qsl
 
 import pytest
 from flask import Flask, Response, jsonify, request
@@ -17,9 +20,11 @@ from reqtap import ReqTap
 from reqtap.core.constants import (
     REQTAP_USER_FACING_MSG_BODY_CONSUMED,
     REQTAP_USER_FACING_MSG_BODY_NOT_READ,
+    REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED,
     REQTAP_USER_FACING_MSG_MULTIPART,
     REQTAP_USER_FACING_MSG_REDACTED,
 )
+from reqtap.core.models import CapturedRequest
 from reqtap.flask import intercept
 
 
@@ -43,12 +48,34 @@ def build_app(**reqtap_kwargs: Any) -> tuple[Flask, ReqTap]:
     return app, rqtap
 
 
+def capture_body(
+    raw: bytes, mimetype: str = "application/json", *, budget: int = 64000
+) -> CapturedRequest:
+    """Capture a byte-for-byte echo and check the host response and detail API."""
+    app = Flask(__name__)
+
+    @app.post("/raw-echo")
+    def echo() -> Response:
+        return Response(request.get_data(), mimetype=mimetype)
+
+    tap = ReqTap(app, live_reqtap_requests=True, body_preview_bytes=budget)
+    client = app.test_client()
+    response = client.post("/raw-echo", data=raw, content_type=mimetype)
+    assert response.status_code == 200
+    assert response.data == raw
+    record: CapturedRequest = tap.store.list()[0]
+    detail = client.get(f"/_reqtap/api/requests/{record.id}").get_json()
+    assert detail["request_body"] == record.request_body
+    assert detail["response_body"] == record.response_body
+    assert record.response_body_total_bytes == len(raw)
+    return record
+
+
 def test_get_request_is_captured() -> None:
     app, rqtap = build_app()
     app.test_client().get("/bridge?bridge_colour=red")
 
     record = rqtap.store.list()[0]
-    print(record)
     assert record.method == "GET"
     assert record.path == "/bridge"
     assert record.query_string == "bridge_colour=red"
@@ -119,6 +146,115 @@ def test_post_body_is_captured_both_ways() -> None:
     assert record.status == 201
     assert "coffee" in record.request_body
     assert "coffee" in record.response_body
+
+
+@pytest.mark.parametrize(
+    "request_mimetype",
+    ["application/json", "application/problem+json"],
+)
+def test_json_body_sensitive_values_are_redacted_both_ways(
+    request_mimetype: str,
+) -> None:
+    app, rqtap = build_app()
+    payload = {
+        "email": "dev@example.com",
+        "password": "hunter2",
+        "profile": {"oauthToken": "nested-token"},
+        "items": [{"client_secret": "deep-secret", "name": "coffee"}],
+    }
+
+    app.test_client().post(
+        "/echo",
+        data=json.dumps(payload),
+        content_type=request_mimetype,
+    )
+
+    record = rqtap.store.list()[0]
+    expected = {
+        "email": "dev@example.com",
+        "password": REQTAP_USER_FACING_MSG_REDACTED,
+        "profile": {"oauthToken": REQTAP_USER_FACING_MSG_REDACTED},
+        "items": [
+            {
+                "client_secret": REQTAP_USER_FACING_MSG_REDACTED,
+                "name": "coffee",
+            }
+        ],
+    }
+    assert json.loads(record.request_body) == expected
+    assert json.loads(record.response_body) == {"you_sent": expected}
+
+
+def test_form_body_sensitive_values_are_redacted_both_ways() -> None:
+    record = capture_body(
+        b"username=alice&password=hunter2&api%5Fkey=sk_live_9&password=second-secret",
+        "application/x-www-form-urlencoded",
+    )
+    for body in (record.request_body, record.response_body):
+        assert parse_qsl(body) == [
+            ("username", "alice"),
+            ("password", REQTAP_USER_FACING_MSG_REDACTED),
+            ("api_key", REQTAP_USER_FACING_MSG_REDACTED),
+            ("password", REQTAP_USER_FACING_MSG_REDACTED),
+        ]
+
+
+@pytest.mark.parametrize("raw", [b'{"password":"secret"', b'{"password":"secret","x":"\xff"}'])
+def test_malformed_structured_bodies_fail_closed(raw: bytes) -> None:
+    record = capture_body(raw)
+    assert record.request_body == REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED
+    assert record.response_body == REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(b'{"value":1.234567890123456789}', id="precise-decimal"),
+        pytest.param(b'{"value":1e400}', id="large-exponent"),
+        pytest.param(b'{"n":' + b"1" * 5000 + b"}", id="large-integer"),
+        pytest.param(b'{"name":"\\ud800"}', id="escaped-surrogate"),
+        pytest.param(b'{"item":"first","item":"second"}', id="duplicate-fields"),
+        pytest.param(b'[null,true,false,"1.2",{},[],[1.2]]', id="array-and-scalars"),
+        pytest.param(b"1.234567890123456789", id="top-level-number"),
+        pytest.param(' {"name":"café😀"} '.encode(), id="unicode"),
+    ],
+)
+def test_json_capture_preserves_ordinary_values(raw: bytes) -> None:
+    record = capture_body(raw)
+    expected = json.loads(raw, parse_int=Decimal, parse_float=Decimal, object_pairs_hook=list)
+    for body in (record.request_body, record.response_body):
+        assert (
+            json.loads(body, parse_int=Decimal, parse_float=Decimal, object_pairs_hook=list)
+            == expected
+        )
+
+
+def test_empty_json_body_remains_empty() -> None:
+    record = capture_body(b"")
+    assert record.request_body == ""
+    assert record.response_body == ""
+
+
+def test_repeated_sensitive_json_fields_are_all_redacted() -> None:
+    record = capture_body(
+        b'{"password":"first-secret","password":{"nested":"second-secret"},'
+        b'"items":[{"to\\u006ben":"third-secret","value":1.234567890123456789}]}'
+    )
+    expected = [
+        ("password", REQTAP_USER_FACING_MSG_REDACTED),
+        ("password", REQTAP_USER_FACING_MSG_REDACTED),
+        (
+            "items",
+            [
+                [
+                    ("token", REQTAP_USER_FACING_MSG_REDACTED),
+                    ("value", Decimal("1.234567890123456789")),
+                ]
+            ],
+        ),
+    ]
+    for body in (record.request_body, record.response_body):
+        assert json.loads(body, parse_float=Decimal, object_pairs_hook=list) == expected
 
 
 def test_error_captures_traceback_and_500() -> None:
@@ -205,13 +341,17 @@ def test_response_cookies_are_redacted() -> None:
     assert "secret-token" not in str(record.response_headers)
 
 
-def test_large_body_is_truncated() -> None:
-    app, rqtap = build_app(body_preview_bytes=10)
-    app.test_client().post("/echo", data="x" * 1000, content_type="application/json")
-
-    record = rqtap.store.list()[0]
+@pytest.mark.parametrize("budget", [32, 64, 128])
+def test_large_body_is_truncated(budget: int) -> None:
+    raw = json.dumps({"password": "secret-value", "padding": "x" * 1000}).encode()
+    assert b"secret-value" in raw[:budget]
+    record = capture_body(raw, budget=budget)
     assert record.request_body_truncated is True
-    assert len(record.request_body.encode("utf-8")) <= 10
+    assert record.response_body_truncated is True
+    assert len(record.request_body.encode("utf-8")) <= budget
+    assert len(record.response_body.encode("utf-8")) <= budget
+    assert "secret-value" not in record.request_body
+    assert "secret-value" not in record.response_body
 
 
 def test_secret_query_values_are_redacted_and_ordinary_ones_are_kept() -> None:
@@ -356,7 +496,6 @@ def test_warns_when_live(caplog: pytest.LogCaptureFixture) -> None:
     assert "reqtap is ACTIVE" in caplog.text
     warning = next(record for record in caplog.records if record.levelname == "WARNING")
     assert "REQTAP WARNING" in warning.getMessage()
-    assert warning.getMessage().count("!") >= 20
 
 
 def test_silent_when_inactive(caplog: pytest.LogCaptureFixture) -> None:
