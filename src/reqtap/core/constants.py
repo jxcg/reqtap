@@ -57,6 +57,20 @@ SENSITIVE_KEY_PATTERNS = (
     "xsrf",
 )
 
+# Headers a proxy or CDN uses to pass on the caller's IP address. Exact names,
+# lowercase: a substring like "forwarded" would also hide X-Forwarded-Proto.
+CLIENT_IP_HEADERS = frozenset({
+    "x-forwarded-for",
+    "x-real-ip",
+    "forwarded",
+    "true-client-ip",
+    "cf-connecting-ip",
+    "fastly-client-ip",
+    "x-client-ip",
+    "x-cluster-client-ip",
+    "x-original-forwarded-for",
+})
+
 # Comfortably fits a session cookie or a JWT; the ceiling that matters is
 # 100 headers x 200 records, not any single value.
 MAX_HEADER_CHARS = 1024
