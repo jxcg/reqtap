@@ -467,13 +467,31 @@ def test_app_factory_keeps_one_store_per_app() -> None:
 
     first.test_client().get("/ping")
 
-    assert len(first.extensions["reqtap"].list()) == 1
-    assert second.extensions["reqtap"].list() == []
+    with first.app_context():
+        first_store = rqtap.store
+    with second.app_context():
+        second_store = rqtap.store
+    assert first_store is not None and second_store is not None
+    assert len(first_store.list()) == 1
+    assert second_store.list() == []
     # rqtap.store cannot guess which app is meant outside a request.
     with pytest.raises(RuntimeError, match="several apps"):
         _ = rqtap.store
-    with second.app_context():
-        assert rqtap.store is second.extensions["reqtap"]
+
+
+def test_extension_slot_holds_the_extension() -> None:
+    """Flask convention: app.extensions["reqtap"] is the ReqTap, and its store is reachable."""
+    app = Flask(__name__)
+
+    @app.get("/ping")
+    def ping() -> str:
+        return "ok"
+
+    rqtap = ReqTap(app, live_reqtap_requests=True)
+    app.test_client().get("/ping")
+
+    assert app.extensions["reqtap"] is rqtap
+    assert rqtap.store is not None and len(rqtap.store.list()) == 1
 
 
 def test_inactive_captures_nothing() -> None:
