@@ -29,20 +29,21 @@ Run your app as normal. Requests/responses are captured in memory only, precisel
 
 ### What gets hidden
 
-Anything that looks like a password or a key is swapped for
-`<redacted by reqtap>` before it is stored. That covers `Authorization`,
-`Cookie`, `X-Api-Key`, `?token=`, `?client_secret=`, and anything else named
-like them. reqtap goes by the name, so it also catches ones it has never seen
-before, such as `X-Shopify-Access-Token`. Harmless names are kept as they are,
-so `?page=2` still shows up. The caller's IP address is not stored at all.
+Values on headers and fields that look like passwords or keys are swapped for
+`<redacted by reqtap>` before they are stored. That covers `Authorization`,
+`Cookie`, `X-Api-Key`, `?token=`, `?client_secret=`, JSON bodies, and
+URL-encoded form bodies. JSON objects are redacted recursively, including objects
+inside arrays. Harmless fields are kept, so `?page=2` and
+`{"item":"coffee"}` remain useful while `{"password":"..."}` is masked.
 
-Two things to watch:
+Redaction is name-based, not a general secret scanner. A credential under an
+ordinary name or in an unstructured body such as plain text can still be stored.
+If a body claims to be JSON or form data but is malformed or larger than the
+configured body preview limit, reqtap stores a safe marker instead of an
+unredacted prefix. The caller's IP address is not stored at all.
 
-- **What you send in the body is kept exactly as sent.** POST
-  `{"password": "..."}` and that password is stored. reqtap only reads names,
-  and the body isn't one.
-- `redact_headers=["X-My-Header"]` hides that header **on top of** the ones
-  above. It does not switch the rest off.
+`redact_headers=["X-My-Header"]` hides that header on top of the automatic
+matches. It does not switch the automatic matching off.
 
 ### Dashboard
 

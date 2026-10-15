@@ -23,6 +23,9 @@ REQTAP_USER_FACING_MSG_REDACTED = "<redacted by reqtap>"
 REQTAP_USER_FACING_MSG_MULTIPART = "<skipped: multipart upload>"
 REQTAP_USER_FACING_MSG_BODY_CONSUMED = "<skipped: body consumed by handler>"
 REQTAP_USER_FACING_MSG_BODY_NOT_READ = "<skipped: body not read by handler>"
+REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED = (
+    "<skipped: structured body could not be safely redacted>"
+)
 
 # Relative to this file, so constants.py must stay one level under reqtap/.
 UI_DIRECTORY = Path(__file__).parent.parent / "dashboard"
