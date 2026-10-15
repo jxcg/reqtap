@@ -13,6 +13,7 @@ authors = [{ name = "Joshua Ng" }]
 keywords = ["debugging", "http", "developer-tools"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Framework :: Flask",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
@@ -30,7 +31,7 @@ Issues = "https://github.com/jxcg/reqtap/issues"
 
 [project.optional-dependencies]
 # Flask is an optional extra: the core package has zero hard dependencies, so
-# `import reqtap` works without it. The Flask adapter (the only one in v0.1)
+# `import reqtap` works without it. The Flask adapter (the only one in 0.0.1)
 # needs it, hence `pip install reqtap[flask]`.
 flask = ["flask>=3.0"]
 dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.4", "flask>=3.0"]
