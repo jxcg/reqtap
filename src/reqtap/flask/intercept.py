@@ -167,17 +167,35 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
     A body is skipped when reading it would destroy it, or when it isn't text.
     """
     # A streamed body is one-shot: reading it here is the only read anyone gets.
-    # direct_passthrough covers send_file, is_streamed covers generators.
-    if response.direct_passthrough or response.is_streamed:
+    # Only lists and tuples are known to be reusable. Even an iterator with
+    # __len__ (which is_streamed accepts) can be one-shot.
+    if response.direct_passthrough or not response.is_sequence:
         return "<skipped: streamed response>", False
 
-    raw = response.get_data()
+    # One extra byte distinguishes an exact fit from a truncated preview.
+    # Never flatten the whole response, or encode a whole large string chunk.
+    remaining = max(0, body_preview_bytes) + 1
+    chunks = []
+    for chunk in response.response:
+        prefix = chunk[:remaining]
+        if isinstance(prefix, str):
+            prefix = prefix.encode("utf-8")[:remaining]
+        if prefix:
+            chunks.append(prefix)
+        remaining -= len(prefix)
+        if remaining == 0:
+            break
+    raw = b"".join(chunks)
     try:
         # Strict: a decode failure here means binary, and errors="replace"
         # would store a screenful of U+FFFD instead of saying so.
         return decode_preview(raw, body_preview_bytes, errors="strict")
     except UnicodeDecodeError:
-        return f"<skipped: binary response, {len(raw)} bytes>", False
+        total = response.content_length
+        if total is None and len(raw) <= body_preview_bytes:
+            total = len(raw)
+        size = f", {total} bytes" if total is not None else ""
+        return f"<skipped: binary response{size}>", False
 
 
 def _redact(
