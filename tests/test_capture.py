@@ -159,6 +159,21 @@ def test_ordinary_headers_are_not_redacted(header_name: str) -> None:
     assert "useful-value" in dict(rqtap.store.list()[0].request_headers).values()
 
 
+@pytest.mark.parametrize(
+    "header_name", ["X-Forwarded-For", "X-Real-Ip", "Forwarded", "CF-Connecting-IP"]
+)
+def test_client_ip_headers_are_redacted(header_name: str) -> None:
+    """The README promises the caller's IP is not stored; proxies send it in these."""
+    app, rqtap = build_app()
+    app.test_client().get(
+        "/hello", headers={header_name: "203.0.113.9", "X-Forwarded-Proto": "https"}
+    )
+
+    stored = dict(rqtap.store.list()[0].request_headers)
+    assert "203.0.113.9" not in str(stored)
+    assert "https" in stored.values()
+
+
 def test_custom_header_redaction_extends_automatic_patterns() -> None:
     app, rqtap = build_app(redact_headers=["X-Custom-Id"])
     app.test_client().get(

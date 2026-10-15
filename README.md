@@ -34,7 +34,9 @@ Anything that looks like a password or a key is swapped for
 `Cookie`, `X-Api-Key`, `?token=`, `?client_secret=`, and anything else named
 like them. reqtap goes by the name, so it also catches ones it has never seen
 before, such as `X-Shopify-Access-Token`. Harmless names are kept as they are,
-so `?page=2` still shows up. The caller's IP address is not stored at all.
+so `?page=2` still shows up. The caller's IP address is not stored at all:
+reqtap never records the connecting address, and hides the headers proxies use
+to pass it on (`X-Forwarded-For`, `X-Real-Ip`, `Forwarded`, and similar).
 
 Two things to watch:
 
