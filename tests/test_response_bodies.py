@@ -4,7 +4,7 @@ An unreadable body must degrade to "not recorded", never to a failed request.
 """
 
 import io
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from flask import Flask, Response, send_file
@@ -118,3 +118,60 @@ def test_capture_failure_does_not_break_the_request(
 
     assert response.status_code == 200
     assert "simulated capture bug" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("chunks", "limit", "expected"),
+    [
+        ([b"abc", b"def"], 4, ("abcd", True)),
+        ([b"abc", b"def", b""], 6, ("abcdef", False)),
+        ([b"", b""], 0, ("", False)),
+        ([b"a"], 0, ("", True)),
+        ([b"caf\xc3", b"\xa9!"], 4, ("caf", True)),
+        ([b"caf\xc3", b"\xa9"], 5, ("café", False)),
+        (["café", "!"], 4, ("caf", True)),
+        (["café", b"!"], 5, ("café", True)),
+        ([b"ok", b"\xff"], 2, ("ok", True)),
+        ([b"\xff"], 8, ("<skipped: binary response, 1 bytes>", False)),
+        ([b"\xff", b"abc"], 2, ("<skipped: binary response>", False)),
+    ],
+)
+@pytest.mark.parametrize("as_tuple", [False, True])
+def test_chunked_preview(
+    chunks: list[str | bytes], limit: int, expected: tuple[str, bool], as_tuple: bool
+) -> None:
+    # Werkzeug encodes mixed chunks at runtime, though its annotation excludes them.
+    response = Response(cast(Any, tuple(chunks) if as_tuple else chunks))
+    original = response.response
+    assert intercept._capture_response_body(response, limit) == expected
+    assert response.response is original
+    assert response.get_data() == b"".join(
+        chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks
+    )
+
+
+def test_preview_does_not_encode_chunks_beyond_limit() -> None:
+    class Unreadable(str):
+        def __getitem__(self, key: Any) -> Any:
+            raise AssertionError("capture read beyond the preview")
+
+    response = Response(cast(Any, [b"abcd", Unreadable("untouched")]))
+    assert intercept._capture_response_body(response, 3) == ("abc", True)
+
+
+def test_sized_iterator_is_not_consumed() -> None:
+    class SizedIterator:
+        def __len__(self) -> int:
+            return 1
+
+        def __iter__(self) -> "SizedIterator":
+            return self
+
+        def __next__(self) -> bytes:
+            raise AssertionError("capture consumed a one-shot body")
+
+    response = Response(SizedIterator())
+    assert not response.is_streamed
+    assert intercept._capture_response_body(response, 8) == (
+        "<skipped: streamed response>", False
+    )
