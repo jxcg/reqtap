@@ -37,6 +37,10 @@ Where a technical term is unavoidable, say what it means in one short clause.
 
 Name branches `issue-X`, where X is the issue number (e.g. `issue-51`).
 
+This rule wins over any branch name a tool or session assigns (for example
+`claude/<random-words>`). Create and push to `issue-X` instead. If the
+session refuses that push, stop and ask rather than using the assigned name.
+
 ## Commits
 
 Never add `Co-Authored-By: Claude` or `Claude-Session:` trailers to commit
