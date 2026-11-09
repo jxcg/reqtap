@@ -140,6 +140,7 @@ def test_capture_failure_does_not_break_the_request(
 def test_chunked_preview(
     chunks: list[str | bytes], limit: int, expected: tuple[str, bool], as_tuple: bool
 ) -> None:
+    """The preview stops at the limit and the body the client gets is untouched."""
     # Werkzeug encodes mixed chunks at runtime, though its annotation excludes them.
     response = Response(cast(Any, tuple(chunks) if as_tuple else chunks))
     original = response.response
@@ -151,8 +152,13 @@ def test_chunked_preview(
 
 
 def test_preview_does_not_encode_chunks_beyond_limit() -> None:
+    """Pieces past the limit are never read, so a huge tail costs nothing."""
+
     class Unreadable(str):
+        """A piece that fails the test if anything slices it."""
+
         def __getitem__(self, key: Any) -> Any:
+            """Fail: the capture reached past the preview."""
             raise AssertionError("capture read beyond the preview")
 
     response = Response(cast(Any, [b"abcd", Unreadable("untouched")]))
@@ -160,14 +166,21 @@ def test_preview_does_not_encode_chunks_beyond_limit() -> None:
 
 
 def test_sized_iterator_is_not_consumed() -> None:
+    """A body that reports a length can still be one-shot, so it is skipped."""
+
     class SizedIterator:
+        """Reports a length, yet can only be read once."""
+
         def __len__(self) -> int:
+            """Claim a length, which is what makes Werkzeug treat it as not streamed."""
             return 1
 
         def __iter__(self) -> "SizedIterator":
+            """Return itself, as one-shot iterators do."""
             return self
 
         def __next__(self) -> bytes:
+            """Fail: the capture read a body it could not give back."""
             raise AssertionError("capture consumed a one-shot body")
 
     response = Response(SizedIterator())
