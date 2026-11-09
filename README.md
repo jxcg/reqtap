@@ -42,10 +42,10 @@ If a body claims to be JSON or form data but is malformed or larger than the
 configured body preview limit, reqtap stores a safe marker instead of an
 unredacted prefix.
 
-The address of whatever connected to your app is not stored. Headers a proxy
-or tunnel adds with the original caller's IP, such as `X-Forwarded-For`,
-`X-Real-IP` and `Forwarded`, are stored like any other header. Add them to
-`redact_headers` to hide them.
+The address of whatever connected to your app is not stored. The headers a
+proxy or tunnel adds with the original caller's IP, such as `X-Forwarded-For`,
+`X-Real-IP`, `Forwarded` and `CF-Connecting-IP`, are hidden too. Other proxy
+headers, such as `X-Forwarded-Proto`, stay visible.
 
 `redact_headers=["X-My-Header"]` hides that header on top of the automatic
 matches. It does not switch the automatic matching off.

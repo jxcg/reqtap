@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from flask import Flask, Response, g, request
 
 from reqtap.core.constants import (
+    CLIENT_IP_HEADERS,
     DASHBOARD_PREFIX_LONG,
     DASHBOARD_PREFIX_SHORT,
     MAX_HEADER_CHARS,
@@ -186,12 +187,14 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
 def _redact(
     header_items: Iterable[tuple[str, str]], redact_headers: set[str]
 ) -> list[tuple[str, str]]:
-    """Copy headers as pairs, masking automatic and custom sensitive names."""
+    """Copy headers as pairs, masking sensitive names, client IPs and custom names."""
     return [
         (
             key,
             REQTAP_USER_FACING_MSG_REDACTED
-            if is_sensitive_key(key) or key.lower() in redact_headers
+            if is_sensitive_key(key)
+            or key.lower() in CLIENT_IP_HEADERS
+            or key.lower() in redact_headers
             else _trim_header(value),
         )
         for key, value in header_items
