@@ -4,7 +4,7 @@ An unreadable body must degrade to "not recorded", never to a failed request.
 """
 
 import io
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from flask import Flask, Response, send_file
@@ -118,3 +118,52 @@ def test_capture_failure_does_not_break_the_request(
 
     assert response.status_code == 200
     assert "simulated capture bug" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("chunks", "limit", "expected"),
+    [
+        ([b"abc", b"def"], 4, ("abcd", True)),
+        ([b"abc", b"def", b""], 6, ("abcdef", False)),
+        (["café", b"!"], 5, ("café", True)),
+        ([b"\xff"], 8, ("<skipped: binary response, 1 bytes>", False)),
+        ([b"\xff", b"abc"], 2, ("<skipped: binary response>", False)),
+    ],
+)
+def test_chunked_preview(
+    chunks: list[str | bytes], limit: int, expected: tuple[str, bool]
+) -> None:
+    """The preview stops at the limit and the body the client gets is untouched."""
+    # Werkzeug encodes mixed chunks at runtime, though its annotation excludes them.
+    response = Response(cast(Any, chunks))
+    original = response.response
+    assert intercept._capture_response_body(response, limit) == expected
+    assert response.response is original
+    assert response.get_data() == b"".join(
+        chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks
+    )
+
+
+def test_sized_iterator_is_not_consumed() -> None:
+    """A body that reports a length can still be one-shot, so it is skipped."""
+
+    class SizedIterator:
+        """Reports a length, yet can only be read once."""
+
+        def __len__(self) -> int:
+            """Claim a length, which is what makes Werkzeug treat it as not streamed."""
+            return 1
+
+        def __iter__(self) -> "SizedIterator":
+            """Return itself, as one-shot iterators do."""
+            return self
+
+        def __next__(self) -> bytes:
+            """Fail: the capture read a body it could not give back."""
+            raise AssertionError("capture consumed a one-shot body")
+
+    response = Response(SizedIterator())
+    assert not response.is_streamed
+    assert intercept._capture_response_body(response, 8) == (
+        "<skipped: streamed response>", False
+    )
