@@ -174,19 +174,14 @@ def _capture_response_body(response: Response, body_preview_bytes: int) -> tuple
         return "<skipped: streamed response>", False
 
     # One extra byte distinguishes an exact fit from a truncated preview.
-    # Never flatten the whole response, or encode a whole large string chunk.
-    remaining = max(0, body_preview_bytes) + 1
-    chunks = []
-    for chunk in response.response:
-        prefix = chunk[:remaining]
-        if isinstance(prefix, str):
-            prefix = prefix.encode("utf-8")[:remaining]
-        if prefix:
-            chunks.append(prefix)
-        remaining -= len(prefix)
-        if remaining == 0:
+    # ponytail: a str piece is encoded whole before slicing; slice it first if
+    # handlers ever return lists holding one huge str.
+    wanted = max(0, body_preview_bytes) + 1
+    raw = b""
+    for chunk in response.iter_encoded():
+        raw += chunk[: wanted - len(raw)]
+        if len(raw) == wanted:
             break
-    raw = b"".join(chunks)
     try:
         # Strict: a decode failure here means binary, and errors="replace"
         # would store a screenful of U+FFFD instead of saying so.
