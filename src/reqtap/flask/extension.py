@@ -46,7 +46,7 @@ class ReqTap:
         self._redact_headers = {name.lower() for name in (redact_headers or [])}
         # One store per app, not one per extension: init_app may be called for
         # several apps and each needs its own buffer.
-        self._apps: list[Flask] = []
+        self._stores: dict[Flask, RingBufferStore] = {}
 
         # Hook reqtap into app
         if app is not None:
@@ -60,17 +60,17 @@ class ReqTap:
         matches the app currently handling the request.
         """
         if has_app_context():
-            in_context: RingBufferStore | None = current_app.extensions.get("reqtap")
-            return in_context
-        if not self._apps:
+            # current_app is a proxy; it hashes and compares as the real app.
+            return self._stores.get(current_app)
+        if not self._stores:
             return None
-        if len(self._apps) > 1:
+        if len(self._stores) > 1:
             raise RuntimeError(
                 "ReqTap is installed on several apps, so rqtap.store is ambiguous here. "
-                "Read it inside an app context, or use app.extensions['reqtap']."
+                "Read it inside `with app.app_context():`."
             )
-        only_app: RingBufferStore = self._apps[0].extensions["reqtap"]
-        return only_app
+        (only_store,) = self._stores.values()
+        return only_store
 
     def init_app(self, app: Flask) -> None:
         """Hook reqtap into ``app`` if activated.
@@ -83,9 +83,9 @@ class ReqTap:
             return
 
         store = RingBufferStore(capacity=self.buffer_size)
-        # app.extensions is the store's home, so two apps cannot share one buffer.
-        app.extensions["reqtap"] = store
-        self._apps.append(app)
+        # Flask convention: the slot holds the extension, not its state.
+        app.extensions["reqtap"] = self
+        self._stores[app] = store
 
         intercept.install(
             app,
