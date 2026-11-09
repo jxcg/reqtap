@@ -72,6 +72,13 @@ CLIENT_IP_HEADERS = frozenset({
     "x-client-ip",
     "x-cluster-client-ip",
     "x-original-forwarded-for",
+    "cf-connecting-ipv6",
+    "cf-pseudo-ipv4",
+    "fly-client-ip",
+    "do-connecting-ip",
+    "x-envoy-external-address",
+    "x-appengine-user-ip",
+    "x-azure-clientip",
 })
 
 # Comfortably fits a session cookie or a JWT; the ceiling that matters is

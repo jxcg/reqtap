@@ -18,6 +18,7 @@ from flask import Flask, Response, jsonify, request
 
 from reqtap import ReqTap
 from reqtap.core.constants import (
+    CLIENT_IP_HEADERS,
     REQTAP_USER_FACING_MSG_BODY_CONSUMED,
     REQTAP_USER_FACING_MSG_BODY_NOT_READ,
     REQTAP_USER_FACING_MSG_BODY_REDACTION_FAILED,
@@ -295,9 +296,7 @@ def test_ordinary_headers_are_not_redacted(header_name: str) -> None:
     assert "useful-value" in dict(rqtap.store.list()[0].request_headers).values()
 
 
-@pytest.mark.parametrize(
-    "header_name", ["X-Forwarded-For", "X-Real-Ip", "Forwarded", "CF-Connecting-IP"]
-)
+@pytest.mark.parametrize("header_name", sorted(CLIENT_IP_HEADERS) + ["CF-Connecting-IP"])
 def test_client_ip_headers_are_redacted(header_name: str) -> None:
     """The README promises the caller's IP is not stored; proxies send it in these."""
     app, rqtap = build_app()
